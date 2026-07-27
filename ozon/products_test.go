@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	ozonCore "api-ozon-seller"
+	ozonCore "github.com/tangwenru/api-ozon-seller"
 )
 
 func TestGetStocksInfo(t *testing.T) {

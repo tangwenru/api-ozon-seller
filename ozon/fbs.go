@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	ozonCore "api-ozon-seller"
+	ozonCore "github.com/tangwenru/api-ozon-seller"
 )
 
 type FBS struct {

@@ -1,8 +1,8 @@
 package ozon
 
 import (
-	ozonCore "api-ozon-seller"
 	"context"
+	ozonCore "github.com/tangwenru/api-ozon-seller"
 	"net/http"
 	"testing"
 	"time"

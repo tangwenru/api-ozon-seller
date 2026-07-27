@@ -1,6 +1,6 @@
 package ozon
 
-import ozonCore "api-ozon-seller"
+import ozonCore "github.com/tangwenru/api-ozon-seller"
 
 type FbsCarriageCreateParams struct {
 	// 表示需要创建包含可追溯商品的发运, 一般为 false

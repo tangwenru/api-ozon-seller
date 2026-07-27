@@ -1,9 +1,10 @@
 package ozon
 
 import (
-	ozonCore "api-ozon-seller"
 	"context"
 	"net/http"
+
+	ozonCore "github.com/tangwenru/api-ozon-seller"
 )
 
 type Analytics struct {

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	ozonCore "api-ozon-seller"
+	ozonCore "github.com/tangwenru/api-ozon-seller"
 )
 
 func TestListPasses(t *testing.T) {

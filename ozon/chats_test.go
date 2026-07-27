@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	ozonCore "api-ozon-seller"
+	ozonCore "github.com/tangwenru/api-ozon-seller"
 )
 
 func TestListChats(t *testing.T) {

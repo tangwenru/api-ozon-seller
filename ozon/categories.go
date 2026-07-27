@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	ozonCore "api-ozon-seller"
+	ozonCore "github.com/tangwenru/api-ozon-seller"
 )
 
 type Categories struct {

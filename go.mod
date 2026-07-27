@@ -1,4 +1,4 @@
-module api-ozon-seller
+module github.com/tangwenru/api-ozon-seller
 
 go 1.25
 
