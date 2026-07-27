@@ -1,0 +1,74 @@
+package ozon
+
+import (
+	"context"
+	"net/http"
+	"testing"
+
+	ozonCore "api-ozon-seller"
+)
+
+func TestListCertifiedBrands(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		statusCode int
+		headers    map[string]string
+		params     *ListCertifiedBrandsParams
+		response   string
+	}{
+		// Test Ok
+		{
+			http.StatusOK,
+			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
+			&ListCertifiedBrandsParams{
+				Page:     0,
+				PageSize: 0,
+			},
+			`{
+				"result": {
+				  "brand_certification": [
+					{
+					  "brand_name": "Sea of Spa",
+					  "has_certificate": false
+					}
+				  ],
+				  "total": 1
+				}
+			}`,
+		},
+		// Test No Client-Id or Api-Key
+		{
+			http.StatusUnauthorized,
+			map[string]string{},
+			&ListCertifiedBrandsParams{},
+			`{
+				"code": 16,
+				"message": "Client-Id and Api-Key headers are required"
+			}`,
+		},
+	}
+
+	for _, test := range tests {
+		c := NewMockClient(ozonCore.NewMockHttpHandler(test.statusCode, test.response, test.headers))
+
+		ctx, _ := context.WithTimeout(context.Background(), testTimeout)
+		resp, err := c.Brands().List(ctx, test.params)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+
+		compareJsonResponse(t, test.response, &ListCertifiedBrandsResponse{})
+
+		if resp.StatusCode != test.statusCode {
+			t.Errorf("got wrong status code: got: %d, expected: %d", resp.StatusCode, test.statusCode)
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			if int64(len(resp.Result.BrandCertification)) != resp.Result.Total {
+				t.Errorf("Length of brands in response is not equal to total field in response")
+			}
+		}
+	}
+}
