@@ -631,7 +631,9 @@ type GetFBSShipmentsListFilter struct {
 	// Warehouse identifier
 	WarehouseId []int64 `json:"warehouse_id"`
 
-	LastChangedStatusDate GetFBSShipmentsListFilterLastChangeDate `json:"last_changed_status_date"`
+	// 注意：字段为空（未按状态变更时间过滤）时必须省略，否则零值时间
+	// 0001-01-01T00:00:00Z 会被 Ozon 当作过滤条件，导致 /v3/posting/fbs/list 返回空列表。
+	LastChangedStatusDate *GetFBSShipmentsListFilterLastChangeDate `json:"last_changed_status_date,omitempty"`
 }
 
 type GetFBSShipmentsListFilterLastChangeDate struct {
