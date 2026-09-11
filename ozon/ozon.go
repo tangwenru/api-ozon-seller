@@ -46,6 +46,7 @@ type Client struct {
 	clusters      *Clusters
 	quants        *Quants
 	reviews       *Reviews
+	roles         *Roles
 }
 
 func (c Client) Analytics() *Analytics {
@@ -140,6 +141,10 @@ func (c Client) Reviews() *Reviews {
 	return c.reviews
 }
 
+func (c Client) Roles() *Roles {
+	return c.roles
+}
+
 type ClientOption func(c *ClientOptions)
 
 func WithHttpClient(httpClient ozonCore.HttpClient) ClientOption {
@@ -213,6 +218,7 @@ func NewClient(opts ...ClientOption) *Client {
 		clusters:      &Clusters{client: coreClient},
 		quants:        &Quants{client: coreClient},
 		reviews:       &Reviews{client: coreClient},
+		roles:         &Roles{client: coreClient},
 	}
 }
 
@@ -244,5 +250,6 @@ func NewMockClient(handler http.HandlerFunc) *Client {
 		clusters:      &Clusters{client: coreClient},
 		quants:        &Quants{client: coreClient},
 		reviews:       &Reviews{client: coreClient},
+		roles:         &Roles{client: coreClient},
 	}
 }
