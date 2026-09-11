@@ -298,21 +298,21 @@ func (c Promotions) RemoveProduct(ctx context.Context, params *RemoveProductFrom
 }
 
 type ListDiscountRequestsParams struct {
-	// Discount request status
-	Status ListDiscountRequestsStatus `json:"status" default:"UNKNOWN"`
+	// Discount request status: ALL / NEW / APPROVED / DECLINED
+	Status ListDiscountRequestsStatus `json:"status" default:"ALL"`
 
-	// Page number from which you want to download the list of discount requests
-	Page uint64 `json:"page"`
+	// Identifier of the last value on the page. Leave empty for the first request
+	LastId int64 `json:"last_id,omitempty"`
 
-	// The maximum number of requests on a page
-	Limit uint64 `json:"limit"`
+	// The maximum number of requests on a page: 5 / 10 / 15 / 20 / 30 / 50 (default 50)
+	Limit uint64 `json:"limit" default:"50"`
 }
 
 type ListDiscountRequestsResponse struct {
 	ozonCore.CommonResponse
 
 	// List of requests
-	Result []ListDiscountRequestsResult `json:"result"`
+	Tasks []ListDiscountRequestsResult `json:"tasks"`
 }
 
 type ListDiscountRequestsResult struct {
@@ -420,11 +420,18 @@ type ListDiscountRequestsResult struct {
 
 	// Approved price fee percent
 	ApprovedPriceFeePercent float64 `json:"approved_price_fee_percent"`
+
+	// Product name
+	Name string `json:"name"`
+
+	// Difference between the buyer's price and the seller's price when the request was created
+	ReductionFactor float64 `json:"reduction_factor"`
 }
 
+// /v1/actions/discounts-task/list 已弃用（未来停用），切换至 /v2/actions/discounts-task/list。
 // Method for getting a list of products that customers want to buy with discount
 func (c Promotions) ListDiscountRequests(ctx context.Context, params *ListDiscountRequestsParams) (*ListDiscountRequestsResponse, error) {
-	url := "/v1/actions/discounts-task/list"
+	url := "/v2/actions/discounts-task/list"
 
 	resp := &ListDiscountRequestsResponse{}
 

@@ -2,6 +2,7 @@ package ozon
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"testing"
 
@@ -22,11 +23,11 @@ func TestListUnprocessedShipments(t *testing.T) {
 			http.StatusOK,
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&ListUnprocessedShipmentsParams{
-				Direction: "ASC",
+				SortDir: Ascending,
 				Filter: ListUnprocessedShipmentsFilter{
 					CutoffFrom: ozonCore.NewTimeFormat(ozonCore.TimeFromString(t, "2006-01-02T15:04:05Z", "2021-08-24T14:15:22Z"), "2006-01-02T15:04:05Z"),
 					CutoffTo:   ozonCore.NewTimeFormat(ozonCore.TimeFromString(t, "2006-01-02T15:04:05Z", "2021-08-31T14:15:22Z"), "2006-01-02T15:04:05Z"),
-					Status:     "awaiting_packaging",
+					Statuses:   []string{"awaiting_packaging"},
 				},
 				Limit: 100,
 				With: &ListUnprocessedShipmentsWith{
@@ -37,7 +38,9 @@ func TestListUnprocessedShipments(t *testing.T) {
 				},
 			},
 			`{
-				"result": {
+				"count": 55,
+				"cursor": "",
+				"has_next": false,
 				  "postings": [
 					{
 					  "posting_number": "23713478-0018-3",
@@ -153,24 +156,9 @@ func TestListUnprocessedShipments(t *testing.T) {
 					  "requirements": {
 						"products_requiring_gtd": [],
 						"products_requiring_country": []
-					  },
-					  "tariffication": [
-						{
-						  "current_tariff_rate": 0,
-						  "current_tariff_type": "",
-						  "current_tariff_charge": "",
-						  "current_tariff_charge_currency_code": "",
-						  "next_tariff_rate": 0,
-						  "next_tariff_type": "",
-						  "next_tariff_charge": "",
-						  "next_tariff_starts_at": "2023-11-13T08:05:57.657Z",
-						  "next_tariff_charge_currency_code": ""
-						}
-					  ]
+					  }
 					}
-				  ],
-				  "count": 55
-				}
+				  ]
 			}`,
 		},
 		// Test No Client-Id or Api-Key
@@ -217,19 +205,18 @@ func TestGetFBSShipmentsList(t *testing.T) {
 			http.StatusOK,
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&GetFBSShipmentsListParams{
-				Direction: "ASC",
+				SortDir: Ascending,
 				Filter: GetFBSShipmentsListFilter{
-					Since:            ozonCore.TimeFromString(t, "2006-01-02T15:04:05Z", "2021-11-01T00:00:00.000Z"),
-					To:               ozonCore.TimeFromString(t, "2006-01-02T15:04:05Z", "2021-12-01T23:59:59.000Z"),
-					Status:           "awaiting_packaging",
-					WarehouseId:      []int64{123},
-					ProviderId:       []int64{223},
-					FBPFilter:        FBPFilterAll,
-					DeliveryMethodId: []int64{456},
-					OrderId:          0,
+					Since:             ozonCore.TimeFromString(t, "2006-01-02T15:04:05Z", "2021-11-01T00:00:00.000Z"),
+					To:                ozonCore.TimeFromString(t, "2006-01-02T15:04:05Z", "2021-12-01T23:59:59.000Z"),
+					Statuses:          []string{"awaiting_packaging"},
+					WarehouseIds:      []int64{123},
+					ProviderIds:       []int64{223},
+					DeliveryMethodIds: []int64{456},
+					OrderId:           0,
 				},
-				Limit:  0,
-				Offset: 0,
+				Limit:  1,
+				Cursor: "",
 				With: &GetFBSShipmentsListWith{
 					AnalyticsData: true,
 					FinancialData: true,
@@ -239,7 +226,9 @@ func TestGetFBSShipmentsList(t *testing.T) {
 			},
 			`{
 				"result": {
-				  "postings": [
+					"cursor": "",
+					"has_next": true,
+					"postings": [
 					{
 					  "posting_number": "05708065-0029-1",
 					  "order_id": 680420041,
@@ -295,23 +284,9 @@ func TestGetFBSShipmentsList(t *testing.T) {
 						"products_requiring_gtd": [],
 						"products_requiring_country": [],
 						"products_requiring_mandatory_mark": []
-					  },
-					  "tariffication": [
-						{
-						  "current_tariff_rate": 0,
-						  "current_tariff_type": "",
-						  "current_tariff_charge": "",
-						  "current_tariff_charge_currency_code": "",
-						  "next_tariff_rate": 0,
-						  "next_tariff_type": "",
-						  "next_tariff_charge": "",
-						  "next_tariff_starts_at": "2023-11-13T08:05:57.657Z",
-						  "next_tariff_charge_currency_code": ""
-						}
-					  ]
+					  }
 					}
-				  ],
-				  "has_next": true
+					]
 				}
 			}`,
 		},
@@ -671,20 +646,7 @@ func TestGetShipmentDataByIdentifier(t *testing.T) {
 					"products_requiring_gtd": [],
 					"products_requiring_country": []
 				  },
-				  "product_exemplars": null,
-				  "tariffication": [
-					{
-					  "current_tariff_rate": 0,
-					  "current_tariff_type": "",
-					  "current_tariff_charge": "",
-					  "current_tariff_charge_currency_code": "",
-					  "next_tariff_rate": 0,
-					  "next_tariff_type": "",
-					  "next_tariff_charge": "",
-					  "next_tariff_starts_at": "2023-11-13T08:05:57.657Z",
-					  "next_tariff_charge_currency_code": ""
-					}
-				  ]
+				  "product_exemplars": null
 				}
 			}`,
 		},
@@ -1166,19 +1128,14 @@ func TestGetLabeling(t *testing.T) {
 		params     *GetLabelingParams
 		response   string
 	}{
-		// Test Ok
+		// Test Ok —— 真实接口返回二进制 PDF（与文档示例的 JSON 不同）
 		{
 			http.StatusOK,
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&GetLabelingParams{
 				TaskId: 158,
 			},
-			`{
-				"result": {
-				  "status": "completed",
-				  "file_url": "https://cdn1.ozone.ru/s3/sc-temporary/e6/0c/e60cdfd7aed78c2b44d134504fbd591d.pdf"
-				}
-			}`,
+			"%PDF-1.7 fake binary pdf content",
 		},
 		// Test No Client-Id or Api-Key
 		{
@@ -1202,15 +1159,8 @@ func TestGetLabeling(t *testing.T) {
 			continue
 		}
 
-		compareJsonResponse(t, test.response, &GetLabelingResponse{})
-
 		if resp.StatusCode != test.statusCode {
 			t.Errorf("got wrong status code: got: %d, expected: %d", resp.StatusCode, test.statusCode)
-		}
-		if resp.StatusCode == http.StatusOK {
-			if resp.Result.Status == "" {
-				t.Errorf("Status cannot be empty")
-			}
 		}
 	}
 }
@@ -1219,25 +1169,23 @@ func TestPrintLabeling(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		statusCode int
-		headers    map[string]string
-		params     *PrintLabelingParams
-		response   string
+		statusCode  int
+		headers     map[string]string
+		params      *PrintLabelingParams
+		response    string
+		expectError bool
 	}{
-		// Test Ok
+		// Test Ok —— 真实接口返回二进制 PDF（与文档示例的 JSON 不同）
 		{
 			http.StatusOK,
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&PrintLabelingParams{
 				PostingNumber: []string{"48173252-0034-4"},
 			},
-			`{
-				"content_type": "application/pdf",
-				"file_name": "ticket-170660-2023-07-13T13:17:06Z.pdf",
-				"file_content": "%PDF-1.7\n%âãÏÓ\n53 0 obj\n<</MarkInfo<</Marked true/Type/MarkInfo>>/Pages 9 0 R/StructTreeRoot 10 0 R/Type/Catalog>>\nendobj\n8 0 obj\n<</Filter/FlateDecode/Length 2888>>\nstream\nxå[[ݶ\u0011~?¿BÏ\u0005Bs\u001c^\u0000Àwí5ú\u0010 m\u0016Èsà¦)\n;hÒ\u0014èÏïG\u0014)<{äµ] ]?¬¬oIÎ}¤F±óϤñï\u001bÕü×X­´OÏï?^~¹$<ø¨È9q\u0013Y\u0012åñì§_¼|ÿégü\t+\u0012\u001bxª}Æxҿ¿¼_º¼xg¦þ5OkuÌ3ýíògüûå\"Ni\u0016C\u0001°\u000fA9g'r¢\"\u0013YóĪ\u0018NÑ{\u001dÕóZ¬\\Ô\""
-			}`,
+			"%PDF-1.7 fake binary pdf content",
+			false,
 		},
-		// Test No Client-Id or Api-Key
+		// Test No Client-Id or Api-Key —— JSON 错误体 → 函数返回 error
 		{
 			http.StatusUnauthorized,
 			map[string]string{},
@@ -1246,6 +1194,7 @@ func TestPrintLabeling(t *testing.T) {
 				"code": 16,
 				"message": "Client-Id and Api-Key headers are required"
 			}`,
+			true,
 		},
 	}
 
@@ -1254,12 +1203,16 @@ func TestPrintLabeling(t *testing.T) {
 
 		ctx, _ := context.WithTimeout(context.Background(), testTimeout)
 		resp, err := c.FBS().PrintLabeling(ctx, test.params)
+		if test.expectError {
+			if err == nil {
+				t.Error("expected error for JSON error response")
+			}
+			continue
+		}
 		if err != nil {
 			t.Error(err)
 			continue
 		}
-
-		compareJsonResponse(t, test.response, &PrintLabelingResponse{})
 
 		if resp.StatusCode != test.statusCode {
 			t.Errorf("got wrong status code: got: %d, expected: %d", resp.StatusCode, test.statusCode)
@@ -1268,6 +1221,13 @@ func TestPrintLabeling(t *testing.T) {
 		if resp.StatusCode == http.StatusOK {
 			if resp.Content == "" {
 				t.Error("content cannot be empty")
+			}
+			if resp.ContentByte == nil || len(resp.ContentByte) == 0 {
+				t.Error("ContentByte cannot be empty")
+			}
+			expectedContent := base64.StdEncoding.EncodeToString([]byte(test.response))
+			if resp.Content != expectedContent {
+				t.Errorf("Content must be base64 of raw binary body: got %q, expected %q", resp.Content, expectedContent)
 			}
 		}
 	}
@@ -2720,18 +2680,14 @@ func TestBarcodeFromProductShipment(t *testing.T) {
 		params     *BarcodeFromProductShipmentParams
 		response   string
 	}{
-		// Test Ok
+		// Test Ok —— 真实接口返回二进制 PNG（与文档示例的 JSON 不同）
 		{
 			http.StatusOK,
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&BarcodeFromProductShipmentParams{
 				Id: 295662811,
 			},
-			`{
-				"content_type": "image/png",
-				"file_name": "20913984_barcode.png",
-				"file_content": "PNG\r\n\u001a\n\u0000\u0000\u0000\rIHDR\u0000\u0000\u0003\u0010\u0000\u0000\u0000\u0010\u0000\u0000\u0000\u0000íZ\u000e'\u0000\u0000\u0002pIDATxìÕÁJ\u00031\u0014@Q+þÿ/×E\u0017\u000e¼\u0010u¡-ç¬$£Éˌp?î÷·§t» }ýü¸Ãcåz¹2wOWû\\Ϛ뫧×Ùö;ì|rÇýßîç¼úî{§¬N?í7oìv¸®µ¹Ãùû¹¾ÿÏ9ÿî?a¸ºéê7O&߿É9çÉ\u000eÏáý¯\u0007\u0000à\u0012\b\u0000@\u0000\u0004\u0002$\u0010\u0000$\u0000 \t\u0004\u0000I \u0000H\u0002\u0001@\u0012\b\u0000@\u0000\u0004\u0002$\u0010\u0000$\u0000 \t\u0004\u0000I \u0000H\u0002\u0001@\u0012\b\u0000@\u0000\u0004\u0002$\u0010\u0000$\u0000 \t\u0004\u0000I \u0000H\u0002\u0001@\u0012\b\u0000@\u0000\u0004\u0002$\u0010\u0000$\u0000 \t\u0004\u0000I \u0000H\u0002\u0001@\u0012\b\u0000@\u0000\u0004\u0002$\u0010\u0000"
-			}`,
+			"\x89PNG fake binary png content",
 		},
 		// Test No Client-Id or Api-Key
 		{
@@ -2755,22 +2711,8 @@ func TestBarcodeFromProductShipment(t *testing.T) {
 			continue
 		}
 
-		compareJsonResponse(t, test.response, &BarcodeFromProductShipmentResponse{})
-
 		if resp.StatusCode != test.statusCode {
 			t.Errorf("got wrong status code: got: %d, expected: %d", resp.StatusCode, test.statusCode)
-		}
-
-		if resp.StatusCode == http.StatusOK {
-			if resp.Content == "" {
-				t.Errorf("content cannot be empty")
-			}
-			if resp.Type == "" {
-				t.Error("type cannot be empty")
-			}
-			if resp.Name == "" {
-				t.Error("name cannot be empty")
-			}
 		}
 	}
 }
@@ -2840,18 +2782,14 @@ func TestGetActPDF(t *testing.T) {
 		params     *GetActPDFParams
 		response   string
 	}{
-		// Test Ok
+		// Test Ok —— 真实接口返回二进制 PDF（与文档示例的 JSON 不同）
 		{
 			http.StatusOK,
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&GetActPDFParams{
 				Id: 22435521842000,
 			},
-			`{
-				"content_type": "application/pdf",
-				"file_name": "20928233.pdf",
-				"file_content": "binarystring"
-			}`,
+			"%PDF-1.7 fake binary pdf content",
 		},
 		// Test No Client-Id or Api-Key
 		{
@@ -2875,16 +2813,8 @@ func TestGetActPDF(t *testing.T) {
 			continue
 		}
 
-		compareJsonResponse(t, test.response, &GetActPDFResponse{})
-
 		if resp.StatusCode != test.statusCode {
 			t.Errorf("got wrong status code: got: %d, expected: %d", resp.StatusCode, test.statusCode)
-		}
-
-		if resp.StatusCode == http.StatusOK {
-			if resp.FileContent == "" {
-				t.Errorf("result cannot be empty")
-			}
 		}
 	}
 }

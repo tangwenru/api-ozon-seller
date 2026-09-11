@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
+	"time"
 )
 
 type HttpClient interface {
@@ -70,7 +72,78 @@ func (c Client) newRequest(ctx context.Context, method string, uri string, body 
 	return req, nil
 }
 
+const (
+	// 429 限流时最多重试次数
+	max429Retries = 3
+)
+
+// Request 发送请求并解析响应。
+//
+// 对 429 Too Many Requests 会读取 Retry-After 头做退避重试（最多 3 次）：
+// Ozon 的限流错误不会处理请求，因此对所有方法重试都是安全的。
 func (c Client) Request(
+	ctx context.Context,
+	method string,
+	path string,
+	req,
+	resp interface{},
+	options map[string]string,
+) (*Response, error) {
+	delay := 1 * time.Second
+
+	for attempt := 0; ; attempt++ {
+		response, err := c.doRequest(ctx, method, path, req, resp, options)
+		if err != nil {
+			return nil, err
+		}
+
+		if response.StatusCode == http.StatusTooManyRequests && attempt < max429Retries {
+			if retryAfter := getRetryAfter(response); retryAfter > 0 {
+				delay = retryAfter
+			}
+
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return response, ctx.Err()
+			}
+			delay *= 2
+			continue
+		}
+
+		return response, nil
+	}
+}
+
+// getRetryAfter 从响应头解析重试等待时间。
+// 优先读取 Item-Retry-After（Ozon 商品操作接口专用，单位分钟），
+// 其次 Retry-After（秒或 HTTP 日期）。
+func getRetryAfter(response *Response) time.Duration {
+	if itemRetryAfter := response.Header.Get("Item-Retry-After"); itemRetryAfter != "" {
+		if minutes, err := strconv.Atoi(itemRetryAfter); err == nil && minutes > 0 {
+			return time.Duration(minutes) * time.Minute
+		}
+	}
+
+	retryAfter := response.Header.Get("Retry-After")
+	if retryAfter == "" {
+		return 0
+	}
+
+	if seconds, err := strconv.Atoi(retryAfter); err == nil && seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+
+	if t, err := http.ParseTime(retryAfter); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+
+	return 0
+}
+
+func (c Client) doRequest(
 	ctx context.Context,
 	method string,
 	path string,
@@ -100,6 +173,7 @@ func (c Client) Request(
 	response := &Response{}
 	response.Data = resp
 	response.StatusCode = httpResp.StatusCode
+	response.Header = httpResp.Header
 	if httpResp.StatusCode == http.StatusOK {
 		if options["Content-Type"] == "" || options["Content-Type"] == "application/json" {
 			err = json.Unmarshal(body, &response.Data)

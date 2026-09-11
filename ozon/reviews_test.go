@@ -360,10 +360,12 @@ func TestListReviews(t *testing.T) {
 			http.StatusOK,
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&ListReviewsParams{
+				Filters: &ListReviewsFilters{
+					Status: "ALL",
+				},
 				LastId:  "string",
-				Limit:   0,
+				Limit:   100,
 				SortDir: Ascending,
-				Status:  "ALL",
 			},
 			`{
 				"has_next": true,

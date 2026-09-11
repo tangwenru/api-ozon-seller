@@ -282,7 +282,8 @@ func (c Reviews) Get(ctx context.Context, params *GetReviewParams) (*GetReviewRe
 
 	resp := &GetReviewResponse{}
 
-	response, err := c.client.Request(ctx, http.MethodPost, url, nil, resp, nil)
+	// 修复：旧实现传入 nil，导致参数从未生效。
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -292,17 +293,34 @@ func (c Reviews) Get(ctx context.Context, params *GetReviewParams) (*GetReviewRe
 }
 
 type ListReviewsParams struct {
+	// 用于搜索评价的筛选条件
+	Filters *ListReviewsFilters `json:"filters,omitempty"`
+
 	// Identifier of the last review on the page
-	LastId string `json:"last_id"`
+	LastId string `json:"last_id,omitempty"`
 
 	// Number of reviews in the response. Minimum is 20, maximum is 100
 	Limit int32 `json:"limit"`
 
 	// Sorting direction
-	SortDir Order `json:"sort_dir"`
+	SortDir Order `json:"sort_dir,omitempty"`
+}
 
-	// Review statuses
-	Status string `json:"status"`
+type ListReviewsFilters struct {
+	// SKU 列表
+	Sku []int64 `json:"sku,omitempty"`
+
+	// 订单状态
+	OrderStatus string `json:"order_status,omitempty"`
+
+	// 评价状态
+	Status string `json:"status,omitempty"`
+
+	// 发布起始时间
+	PublishedFrom *time.Time `json:"published_from,omitempty"`
+
+	// 发布结束时间
+	PublishedTo *time.Time `json:"published_to,omitempty"`
 }
 
 type ListReviewsResponse struct {
@@ -318,13 +336,15 @@ type ListReviewsResponse struct {
 	Reviews []ReviewDetails `json:"reviews"`
 }
 
+// /v1/review/list 已弃用，切换至 /v2/review/list。
 // Only available to sellers with the Premium Plus subscription
 func (c Reviews) List(ctx context.Context, params *ListReviewsParams) (*ListReviewsResponse, error) {
-	url := "/v1/review/list"
+	url := "/v2/review/list"
 
 	resp := &ListReviewsResponse{}
 
-	response, err := c.client.Request(ctx, http.MethodPost, url, nil, resp, nil)
+	// 修复：旧实现传入 nil，导致 last_id/limit/sort_dir 等参数从未生效。
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
 	if err != nil {
 		return nil, err
 	}

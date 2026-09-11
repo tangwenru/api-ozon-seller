@@ -240,6 +240,8 @@ type GetTotalTransactionsSumResult struct {
 	ServicesAmount float64 `json:"services_amount"`
 }
 
+// Deprecated: /v3/finance/transaction/totals 已于 2026-09-08 停用。
+// 官方要求改用 /v1/finance/accrual/postings、/v1/finance/accrual/types、/v1/finance/accrual/by-day。
 // Returns total sums for transactions for specified period
 func (c Finance) GetTotalTransactionsSum(ctx context.Context, params *GetTotalTransactionsSumParams) (*GetTotalTransactionsSumResponse, error) {
 	url := "/v3/finance/transaction/totals"
@@ -383,6 +385,8 @@ type ListTransactionsResultOperationService struct {
 	Price float64 `json:"price"`
 }
 
+// Deprecated: /v3/finance/transaction/list 已于 2026-09-08 停用。
+// 官方要求改用 /v1/finance/accrual/postings、/v1/finance/accrual/types、/v1/finance/accrual/by-day。
 // Returns detailed information on all accruals. The maximum period for which you can get information in one request is 1 month.
 //
 // If you don't specify the posting_number in request, the response contains all shipments for the specified period or shipments of a certain type
@@ -444,6 +448,227 @@ func (c Finance) SalesToLegalEntities(ctx context.Context, params *GetReportPara
 	url := "/v1/finance/mutual-settlement"
 
 	resp := &ReportResponse{}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
+	if err != nil {
+		return nil, err
+	}
+	response.CopyCommonResponse(&resp.CommonResponse)
+
+	return resp, nil
+}
+
+// ===== /v1/finance/accrual/* 系列（/v3/finance/transaction/* 的官方替代品） =====
+
+type AccrualAmount struct {
+	// 金额（字符串，防止精度丢失）
+	Amount string `json:"amount"`
+
+	// 币种
+	Currency string `json:"currency"`
+}
+
+// 按货件统计的应计项目
+type AccrualPostingsParams struct {
+	// 货件编号，[ 1 .. 200 ]
+	PostingNumbers []string `json:"posting_numbers"`
+}
+
+type AccrualPostingsResponse struct {
+	ozonCore.CommonResponse
+
+	// 按货件统计的应计项目列表
+	PostingAccruals []AccrualPostingsItem `json:"posting_accruals"`
+}
+
+type AccrualPostingsItem struct {
+	// 应计项目列表
+	Accruals []AccrualPostingsItemAccrual `json:"accruals"`
+
+	// 货件编号
+	PostingNumber string `json:"posting_number"`
+}
+
+type AccrualPostingsItemAccrual struct {
+	// 应计日期
+	AccrualDate string `json:"accrual_date"`
+
+	// 应计金额
+	Accrued AccrualAmount `json:"accrued"`
+
+	// 数量
+	Quantity int64 `json:"quantity"`
+
+	// 卖家价格
+	SellerPrice AccrualAmount `json:"seller_price"`
+
+	// SKU
+	SKU int64 `json:"sku"`
+
+	// 应计项目类型标识符，参考 AccrualTypes 的 id
+	TypeId int64 `json:"type_id"`
+}
+
+// 获取按货件统计的应计项目。
+func (c Finance) AccrualPostings(ctx context.Context, params *AccrualPostingsParams) (*AccrualPostingsResponse, error) {
+	url := "/v1/finance/accrual/postings"
+
+	resp := &AccrualPostingsResponse{}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
+	if err != nil {
+		return nil, err
+	}
+	response.CopyCommonResponse(&resp.CommonResponse)
+
+	return resp, nil
+}
+
+// 获取应计项目参考信息。
+func (c Finance) AccrualTypes(ctx context.Context) (*AccrualTypesResponse, error) {
+	url := "/v1/finance/accrual/types"
+
+	resp := &AccrualTypesResponse{}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, nil, resp, nil)
+	if err != nil {
+		return nil, err
+	}
+	response.CopyCommonResponse(&resp.CommonResponse)
+
+	return resp, nil
+}
+
+type AccrualTypesResponse struct {
+	ozonCore.CommonResponse
+
+	// 应计项目相关信息
+	AccrualTypes []AccrualTypesItem `json:"accrual_types"`
+}
+
+type AccrualTypesItem struct {
+	// 应计项目说明
+	Description string `json:"description"`
+
+	// 应计项目标识符
+	Id int32 `json:"id"`
+
+	// 应计项目名称
+	Name string `json:"name"`
+}
+
+// 获取某日应计项目
+type AccrualByDayParams struct {
+	// 应计日期。YYYY-MM-DD。最早可查询日期为 2022-01-01。
+	// 如果指定 last_id，请传递上一个请求中的 date 值。
+	Date string `json:"date"`
+
+	// 页面中最后一个值的标识符。首次请求请留空。
+	// 标识符有效期为 15 分钟。
+	LastId string `json:"last_id"`
+}
+
+type AccrualByDayResponse struct {
+	ozonCore.CommonResponse
+
+	// 货件的应计项目列表
+	Accruals []AccrualByDayItem `json:"accruals"`
+
+	// 页面中最后一个值的标识符（有效期 15 分钟）
+	LastId string `json:"last_id"`
+}
+
+type AccrualByDayItem struct {
+	// 应计项目类别
+	AccruedCategory string `json:"accrued_category"`
+
+	// 集装箱相关费用
+	ContainerFees AccrualByDayFees `json:"container_fees"`
+
+	// 应计日期
+	Date string `json:"date"`
+
+	// 商品相关费用
+	ItemFees AccrualByDayItemFees `json:"item_fees"`
+
+	// 非商品相关费用
+	NonItemFee AccrualByDayFee `json:"non_item_fee"`
+
+	// 货件信息
+	Posting AccrualByDayPosting `json:"posting"`
+
+	// 总金额
+	TotalAmount AccrualAmount `json:"total_amount"`
+
+	// 应计项目标识符
+	AccrualId int64 `json:"accrual_id"`
+
+	// 单位编号
+	UnitNumber string `json:"unit_number"`
+}
+
+type AccrualByDayFees struct {
+	Fees []AccrualByDayFee `json:"fees"`
+}
+
+type AccrualByDayFee struct {
+	Accrued AccrualAmount `json:"accrued"`
+	TypeId  int64         `json:"type_id"`
+}
+
+type AccrualByDayItemFees struct {
+	Fees []AccrualByDayItemFee `json:"fees"`
+}
+
+type AccrualByDayItemFee struct {
+	Fees []AccrualByDayFee `json:"fees"`
+	SKU  int64             `json:"sku"`
+}
+
+type AccrualByDayPosting struct {
+	// 配送方案
+	DeliverySchema string `json:"delivery_schema"`
+
+	// 配送速度
+	DeliverySpeed int64 `json:"delivery_speed"`
+
+	// 商品信息
+	Products []AccrualByDayPostingProduct `json:"products"`
+}
+
+type AccrualByDayPostingProduct struct {
+	// 佣金信息
+	Commission AccrualByDayProductCommission `json:"commission"`
+
+	// 配送费用信息
+	Delivery AccrualByDayProductDelivery `json:"delivery"`
+
+	// SKU
+	SKU int64 `json:"sku"`
+}
+
+type AccrualByDayProductCommission struct {
+	Bonus           AccrualAmount `json:"bonus"`
+	Coinvestment    AccrualAmount `json:"coinvestment"`
+	Commission      AccrualAmount `json:"commission"`
+	CommissionRatio string        `json:"commission_ratio"`
+	SaleAmount      AccrualAmount `json:"sale_amount"`
+	SaleCommission  AccrualAmount `json:"sale_commission"`
+	SalePrice       AccrualAmount `json:"sale_price"`
+	SellerPrice     AccrualAmount `json:"seller_price"`
+}
+
+type AccrualByDayProductDelivery struct {
+	Services     []AccrualByDayFee `json:"services"`
+	TotalAccrued AccrualAmount     `json:"total_accrued"`
+}
+
+// 获取某日应计项目。
+// 注意分页：把上一次响应中的 last_id 传回，同时 date 保持同一日期。
+func (c Finance) AccrualByDay(ctx context.Context, params *AccrualByDayParams) (*AccrualByDayResponse, error) {
+	url := "/v1/finance/accrual/by-day"
+
+	resp := &AccrualByDayResponse{}
 
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
 	if err != nil {

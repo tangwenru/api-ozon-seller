@@ -12,9 +12,13 @@ import (
 
 type CommonResponse struct {
 	StatusCode int
-	Code       int                    `json:"code"`
-	Details    []CommonResponseDetail `json:"details"`
-	Message    string                 `json:"message"`
+	Header     http.Header
+
+	// 注意：Ozon 部分错误响应中的 code 是字符串（如 "FORBIDDEN"），
+	// int 类型会解析失败。当前保持兼容，后续可改为 json.RawMessage + 访问器。
+	Code    int                    `json:"code"`
+	Details []CommonResponseDetail `json:"details"`
+	Message string                 `json:"message"`
 }
 
 type CommonResponseDetail struct {

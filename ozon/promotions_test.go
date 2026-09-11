@@ -368,12 +368,12 @@ func TestListDiscountRequests(t *testing.T) {
 			http.StatusOK,
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&ListDiscountRequestsParams{
-				Status: "UNKNOWN",
-				Page:   0,
-				Limit:  100,
+				Status: DiscountRequestsAll,
+				LastId: 0,
+				Limit:  50,
 			},
 			`{
-				"result": [
+				"tasks": [
 				  {
 					"id": 0,
 					"created_at": "2019-08-24T14:15:22Z",

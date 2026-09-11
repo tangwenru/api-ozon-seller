@@ -21,38 +21,38 @@ func TestGetListOfWarehouses(t *testing.T) {
 			http.StatusOK,
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			`{
-    			"result": [
+				"cursor": "",
+				"warehouses": [
 					{
 						"warehouse_id": 1020000177886000,
 						"name": "This is a test",
 						"is_rfbs": false,
 						"has_entrusted_acceptance": false,
-						"first_mile_type": {
+						"first_mile": {
+							"type": "DROP_OFF",
 							"dropoff_point_id": "",
-							"dropoff_timeslot_id": 0,
-							"first_mile_is_changing": false,
-							"first_mile_type": ""
+							"timeslot_from": "09:00",
+							"timeslot_id": 0,
+							"timeslot_to": "18:00",
+							"first_mile_is_changing": false
 						},
 						"is_kgt": false,
-						"can_print_act_in_advance": false,
-						"min_working_days": 5,
-						"is_karantin": false,
 						"has_postings_limit": false,
 						"postings_limit": -1,
 						"working_days": [
-							1,
-							2,
-							3,
-							4,
-							5,
-							6,
-							7
+							"MONDAY",
+							"TUESDAY",
+							"WEDNESDAY",
+							"THURSDAY",
+							"FRIDAY",
+							"SATURDAY",
+							"SUNDAY"
 						],
 						"min_postings_limit": 10,
-						"is_timetable_editable": true,
 						"status": "disabled"
 					}
-				]
+				],
+				"has_next": false
 			}`,
 		},
 		// Test No Client-Id or Api-Key
@@ -83,11 +83,11 @@ func TestGetListOfWarehouses(t *testing.T) {
 		}
 
 		if resp.StatusCode == http.StatusOK {
-			if len(resp.Result) > 0 {
-				if resp.Result[0].WarehouseId == 0 {
+			if len(resp.Warehouses) > 0 {
+				if resp.Warehouses[0].WarehouseId == 0 {
 					t.Errorf("Warehouse id cannot be 0")
 				}
-				if resp.Result[0].Name == "" {
+				if resp.Warehouses[0].Name == "" {
 					t.Errorf("Name cannot be empty")
 				}
 			}
@@ -110,16 +110,16 @@ func TestGetListOfDeliveryMethods(t *testing.T) {
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&GetListOfDeliveryMethodsParams{
 				Filter: &GetListOfDeliveryMethodsFilter{
-					WarehouseId: 15588127982000,
+					WarehouseIds: []int64{15588127982000},
 				},
-				Limit:  100,
-				Offset: 0,
+				Limit:   100,
+				SortDir: Ascending,
 			},
 			`{
-				"result": [
+				"cursor": "",
+				"delivery_methods": [
 				  {
 					"id": 15588127982000,
-					"company_id": 1,
 					"name": "Ozon Логистика курьеру, Есипово",
 					"status": "ACTIVE",
 					"cutoff": "13:00",
@@ -163,17 +163,17 @@ func TestGetListOfDeliveryMethods(t *testing.T) {
 		}
 
 		if resp.StatusCode == http.StatusOK {
-			if len(resp.Result) > 0 {
-				if resp.Result[0].Id == 0 {
+			if len(resp.DeliveryMethods) > 0 {
+				if resp.DeliveryMethods[0].Id == 0 {
 					t.Errorf("Id cannot be 0")
 				}
-				if resp.Result[0].Name == "" {
+				if resp.DeliveryMethods[0].Name == "" {
 					t.Errorf("Name cannot be empty")
 				}
-				if resp.Result[0].Status == "" {
+				if resp.DeliveryMethods[0].Status == "" {
 					t.Errorf("Status cannot be empty")
 				}
-				if resp.Result[0].WarehouseId == 0 {
+				if resp.DeliveryMethods[0].WarehouseId == 0 {
 					t.Errorf("Warehouse id cannot be 0")
 				}
 			}

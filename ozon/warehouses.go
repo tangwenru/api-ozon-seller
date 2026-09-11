@@ -145,15 +145,20 @@ type GetListOfWarehousesResultFirstMile struct {
 	FirstMileType string `json:"first_mile_type"`
 }
 
-// 该方式已过时，并将于2026年4月7日关闭。请切换至 /v2/warehouse/list 新版本。
+// /v1/warehouse/list 已于 2026-04-07 关闭，切换至 /v2/warehouse/list。
 // Method returns the list of FBS and rFBS warehouses.
-// To get the list of FBO warehouses, use the /v1/cluster/list method.
+// To get the list of FBO warehouses, use the /v1/warehouse/fbo/list method.
 func (c Warehouses) GetListOfWarehouses(ctx context.Context) (*GetListOfWarehousesResponse, error) {
-	url := "/v1/warehouse/list"
+	url := "/v2/warehouse/list"
 
 	resp := &GetListOfWarehousesResponse{}
 
-	response, err := c.client.Request(ctx, http.MethodPost, url, nil, resp, nil)
+	// v2 要求 limit 必填（<= 200）
+	query := &GetListOfWarehousesParams{
+		Limit: 200,
+	}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, query, resp, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -184,48 +189,53 @@ func (c Warehouses) GetListOfWarehousesV2(
 }
 
 type GetListOfDeliveryMethodsParams struct {
+	// Cursor for selecting the next batch of data
+	Cursor string `json:"cursor,omitempty"`
+
 	// Search filter for delivery methods
 	Filter *GetListOfDeliveryMethodsFilter `json:"filter,omitempty"`
 
-	// Number of items in a response. Maximum is 50, minimum is 1
-	Limit int64 `json:"limit"`
+	// Number of items in a response. [ 1 .. 100 ]
+	Limit int64 `json:"limit,omitempty"`
 
-	// Number of elements that will be skipped in the response.
-	// For example, if offset=10, the response will start with the 11th element found
-	Offset int64 `json:"offset"`
+	// Sorting direction: ASC — ascending, DESC — descending
+	SortDir Order `json:"sort_dir,omitempty"`
 }
 
 type GetListOfDeliveryMethodsFilter struct {
-	// Delivery service identifier
-	ProviderId int64 `json:"provider_id"`
+	// Delivery method identifiers
+	DeliveryMethodIds []int64 `json:"delivery_method_ids,omitempty"`
 
-	// Delivery method status:
+	// Delivery service identifiers
+	ProviderIds []int64 `json:"provider_ids,omitempty"`
+
+	// Delivery method statuses:
 	//   - NEW—created
 	//   - EDITED—being edited
 	//   - ACTIVE—active
 	//   - DISABLED—inactive
-	Status string `json:"status"`
+	Status []string `json:"status,omitempty"`
 
-	// Warehouse identifier
-	WarehouseId int64 `json:"warehouse_id"`
+	// Warehouse identifiers
+	WarehouseIds []int64 `json:"warehouse_ids,omitempty"`
 }
 
 type GetListOfDeliveryMethodsResponse struct {
 	ozonCore.CommonResponse
 
+	// Cursor for selecting the next batch of data
+	Cursor string `json:"cursor"`
+
 	// Indication that only part of delivery methods was returned in the response:
-	//   - true — make a request with a new offset parameter value for getting the rest of delivery methods;
+	//   - true — make a request with the received cursor value for getting the rest of delivery methods;
 	//   - false — all delivery methods were returned
 	HasNext bool `json:"has_next"`
 
-	// Method result
-	Result []GetListOfDeliveryMethodsResult `json:"result"`
+	// Delivery methods
+	DeliveryMethods []GetListOfDeliveryMethodsResult `json:"delivery_methods"`
 }
 
 type GetListOfDeliveryMethodsResult struct {
-	// Company identifier
-	CompanyId int64 `json:"company_id"`
-
 	// Date and time of delivery method creation
 	CreatedAt time.Time `json:"created_at"`
 
@@ -234,6 +244,9 @@ type GetListOfDeliveryMethodsResult struct {
 
 	// Delivery method identifier
 	Id int64 `json:"id"`
+
+	// Indication that the delivery method belongs to Ozon Express
+	IsExpress bool `json:"is_express"`
 
 	// Delivery method name
 	Name string `json:"name"`
@@ -254,6 +267,12 @@ type GetListOfDeliveryMethodsResult struct {
 	// Order delivery service identifier
 	TemplateId int64 `json:"template_id"`
 
+	// Drop-off point details
+	TPLDropoffPoint *GetListOfDeliveryMethodsTPLDropoffPoint `json:"tpl_dropoff_point,omitempty"`
+
+	// Type of integration with the delivery service
+	TPLIntegrationType string `json:"tpl_integration_type"`
+
 	// Date and time when the delivery method was last updated
 	UpdatedAt time.Time `json:"updated_at"`
 
@@ -261,9 +280,32 @@ type GetListOfDeliveryMethodsResult struct {
 	WarehouseId int64 `json:"warehouse_id"`
 }
 
+type GetListOfDeliveryMethodsTPLDropoffPoint struct {
+	// Drop-off point address
+	Address string `json:"address"`
+
+	// Drop-off point coordinates
+	AddressCoordinates *GetListOfDeliveryMethodsAddressCoordinates `json:"address_coordinates,omitempty"`
+
+	// Drop-off point code
+	Code string `json:"code"`
+
+	// Drop-off point name
+	Name string `json:"name"`
+}
+
+type GetListOfDeliveryMethodsAddressCoordinates struct {
+	// Latitude
+	Latitude float64 `json:"latitude"`
+
+	// Longitude
+	Longitude float64 `json:"longitude"`
+}
+
+// /v1/delivery-method/list 已于 2026-04-07 关闭，切换至 /v2/delivery-method/list。
 // This methods allows you to get list of all delivery methods that can be applied for this warehouse
 func (c Warehouses) GetListOfDeliveryMethods(ctx context.Context, params *GetListOfDeliveryMethodsParams) (*GetListOfDeliveryMethodsResponse, error) {
-	url := "/v1/delivery-method/list"
+	url := "/v2/delivery-method/list"
 
 	resp := &GetListOfDeliveryMethodsResponse{}
 

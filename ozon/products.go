@@ -1423,6 +1423,7 @@ type ProductInfoResultPicture struct {
 	URL string `json:"url"`
 }
 
+// Deprecated: /v1/product/pictures/import 将于 2026-10-01 停用。请改用 UpdateProductImagesV2（/v2/product/pictures/import）。
 // The method for uploading and updating product images.
 //
 // Each time you call the method, pass all the images that should be on the product description page.
@@ -1446,6 +1447,52 @@ func (c Products) UpdateProductImages(ctx context.Context, params *UpdateProduct
 	url := "/v1/product/pictures/import"
 
 	resp := &ProductInfoResponse{}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
+	if err != nil {
+		return nil, err
+	}
+	response.CopyCommonResponse(&resp.CommonResponse)
+
+	return resp, nil
+}
+
+// /v2/product/pictures/import 请求体：一次最多 100 个商品。
+type UpdateProductImagesV2Params struct {
+	// 商品信息，最多 100 个
+	Items []UpdateProductImagesV2Item `json:"items"`
+}
+
+type UpdateProductImagesV2Item struct {
+	// 商品货号（offer_id）
+	OfferId string `json:"offer_id"`
+
+	// 主图链接
+	PrimaryImage string `json:"primary_image"`
+
+	// 营销色彩图片
+	ColorImage string `json:"color_image"`
+
+	// 图片链接数组
+	Images []string `json:"images"`
+}
+
+// /v2/product/pictures/import 响应：返回任务 ID，
+// 需要将 task_id 传给 /v1/product/import/info 查询图片上传状态。
+type UpdateProductImagesV2Response struct {
+	ozonCore.CommonResponse
+
+	// 任务标识符。查询状态使用 /v1/product/import/info。
+	TaskId int64 `json:"task_id"`
+}
+
+// 上传或更新商品图片（v2 批量版，一次最多 100 个商品）。
+// 该方法对每分钟/每天的商品操作数量有限制，超限返回 429，
+// 响应头 Item-Retry-After 表示剩余等待分钟数。
+func (c Products) UpdateProductImagesV2(ctx context.Context, params *UpdateProductImagesV2Params) (*UpdateProductImagesV2Response, error) {
+	url := "/v2/product/pictures/import"
+
+	resp := &UpdateProductImagesV2Response{}
 
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
 	if err != nil {

@@ -19,20 +19,19 @@ type FBS struct {
 
 type ListUnprocessedShipmentsParams struct {
 	// Sorting direction
-	Direction Order `json:"dir,omitempty"`
+	SortDir Order `json:"sort_dir,omitempty"`
 
 	// Request filter
 	Filter ListUnprocessedShipmentsFilter `json:"filter"`
 
-	// Number of values in the response:
-	//
-	// maximum — 1000,
-	// minimum — 1.
-	Limit int64 `json:"limit"`
+	// Number of values in the response: [ 1 .. 100 ]
+	Limit int64 `json:"limit,omitempty"`
 
-	// Number of elements that will be skipped in the response.
-	// For example, if `offset` = 10, the response will start with the 11th element found
-	Offset int64 `json:"offset,omitempty"`
+	// Cursor for selecting the next batch of data
+	Cursor string `json:"cursor,omitempty"`
+
+	// If true, transliteration of the return values is enabled
+	Translit bool `json:"translit,omitempty"`
 
 	// Additional fields that should be added to the response
 	With *ListUnprocessedShipmentsWith `json:"with,omitempty"`
@@ -55,29 +54,27 @@ type ListUnprocessedShipmentsFilter struct {
 	// Maximum date when shipment should be handed over for delivery
 	DeliveringDateTo *ozonCore.TimeFormat `json:"delivering_date_to,omitempty"`
 
-	// Delivery method identifier
-	DeliveryMethodId []int64 `json:"delivery_method_id"`
+	// Delivery method identifiers
+	DeliveryMethodIds []int64 `json:"delivery_method_ids,omitempty"`
 
-	// Specify true to get only MOQ shipments.
+	// Delivery service identifiers
+	ProviderIds []int64 `json:"provider_ids,omitempty"`
+
+	// Shipment statuses
+	Statuses []string `json:"statuses,omitempty"`
+
+	// Warehouse identifiers
+	WarehouseIds []int64 `json:"warehouse_ids,omitempty"`
+
+	// Filter by the time of the last shipment status change.
 	//
-	// The default value is false, the response contains all shipments
-	IsQuantum bool `json:"is_quantum"`
+	// 注意：不按状态变更时间过滤时必须省略该字段。
+	LastChangeStatusDate *ListUnprocessedShipmentsLastChangeStatusDate `json:"last_change_status_date,omitempty"`
+}
 
-	// Filter for shipments delivered from partner warehouse (FBP). You can pass one of the following values:
-	//
-	// Default value is all.
-	//
-	// The FBP scheme is available only for sellers from China
-	FBPFilter FBPFilter `json:"fbpFilter" default:"all"`
-
-	// Delivery service identifier
-	ProviderId []int64 `json:"provider_id"`
-
-	// Shipment status
-	Status string `json:"status"`
-
-	// Warehouse identifier
-	WarehouseId []int64 `json:"warehouse_id"`
+type ListUnprocessedShipmentsLastChangeStatusDate struct {
+	From time.Time `json:"from"`
+	To   time.Time `json:"to"`
 }
 
 type ListUnprocessedShipmentsWith struct {
@@ -97,13 +94,14 @@ type ListUnprocessedShipmentsWith struct {
 type ListUnprocessedShipmentsResponse struct {
 	ozonCore.CommonResponse
 
-	// Request result
-	Result ListUnprocessedShipmentsResult `json:"result"`
-}
-
-type ListUnprocessedShipmentsResult struct {
 	// Element counter in the response
 	Count int64 `json:"count"`
+
+	// Cursor for selecting the next batch of data
+	Cursor string `json:"cursor"`
+
+	// Indicates that the response did not return all shipments
+	HasNext bool `json:"has_next"`
 
 	// List of shipments and detailed information on each one
 	Postings []FBSPosting `json:"postings"`
@@ -557,7 +555,8 @@ type FinancialDataProductPicking struct {
 }
 
 func (c FBS) ListUnprocessedShipments(ctx context.Context, params *ListUnprocessedShipmentsParams) (*ListUnprocessedShipmentsResponse, error) {
-	url := "/v3/posting/fbs/unfulfilled/list"
+	// /v3/posting/fbs/unfulfilled/list 已于 2026-08-31 停用，切换至 v4
+	url := "/v4/posting/fbs/unfulfilled/list"
 
 	resp := &ListUnprocessedShipmentsResponse{}
 
@@ -572,67 +571,70 @@ func (c FBS) ListUnprocessedShipments(ctx context.Context, params *ListUnprocess
 
 type GetFBSShipmentsListParams struct {
 	// Sorting direction
-	Direction Order `json:"dir,omitempty"`
+	SortDir Order `json:"sort_dir,omitempty"`
 
 	// Filter
 	Filter GetFBSShipmentsListFilter `json:"filter"`
 
-	// Number of shipments in the response:
-	//   - maximum is 50,
-	//   - minimum is 1.
-	Limit int64 `json:"limit"`
+	// Number of shipments in the response: [ 1 .. 100 ]
+	Limit int64 `json:"limit,omitempty"`
 
-	// Number of elements that will be skipped in the response. For example, if offset=10, the response will start with the 11th element found
-	Offset int64 `json:"offset,omitempty"`
+	// Cursor for selecting the next batch of data
+	Cursor string `json:"cursor,omitempty"`
+
+	// If true, transliteration of the return values is enabled
+	Translit bool `json:"translit,omitempty"`
 
 	// Additional fields that should be added to the response
 	With *GetFBSShipmentsListWith `json:"with,omitempty"`
 }
 
 type GetFBSShipmentsListFilter struct {
-	// Delivery method identifier
-	DeliveryMethodId []int64 `json:"delivery_method_id"`
+	// Shipment numbers
+	OrderNumbers []string `json:"order_numbers,omitempty"`
 
-	// Filter for shipments delivered from partner warehouse (FBP)
-	//
-	// Default value is all.
-	//
-	// The FBP scheme is available only for sellers from China
-	FBPFilter FBPFilter `json:"fbpFilter" default:"all"`
+	// Delivery method identifiers
+	DeliveryMethodIds []int64 `json:"delivery_method_ids,omitempty"`
+
+	// Integration type flow. Example: "ozon"
+	IntegrationTypeFlow []string `json:"integration_type_flow,omitempty"`
+
+	// Specify true to get only BLR traceable shipments
+	IsBlrTraceable bool `json:"is_blr_traceable,omitempty"`
 
 	// Order identifier
-	OrderId int64 `json:"order_id"`
-
-	// Specify true to get only MOQ shipments.
-	//
-	// The default value is false, the response contains all shipments
-	IsQuantum bool `json:"is_quantum"`
-
-	// Delivery service identifier
-	ProviderId []int64 `json:"provider_id"`
+	OrderId int64 `json:"order_id,omitempty"`
 
 	// Start date of the period for which a list of shipments should be generated.
 	//
 	// Format: YYYYY-MM-DDTHH:MM:SSZ.
 	//
 	// Example: 2019-08-24T14:15:22Z
-	Since time.Time `json:"since"`
+	//
+	// 注意：零值时间（0001-01-01T00:00:00Z）会被 Ozon 当作过滤条件导致返回空列表，
+	// 因此使用 omitempty：未指定时省略该字段。
+	Since time.Time `json:"since,omitempty"`
 
 	// End date of the period for which a list of shipments should be generated.
 	//
 	// Format: YYYYY-MM-DDTHH:MM:SSZ.
 	//
 	// Example: 2019-08-24T14:15:22Z.
-	To time.Time `json:"to"`
+	//
+	// 注意：零值时间会被 Ozon 当作过滤条件，使用 omitempty 省略。
+	To time.Time `json:"to,omitempty"`
 
-	// Shipment status
-	Status string `json:"status"`
+	// Shipment statuses
+	Statuses []string `json:"statuses,omitempty"`
 
-	// Warehouse identifier
-	WarehouseId []int64 `json:"warehouse_id"`
+	// Delivery service identifiers
+	ProviderIds []int64 `json:"provider_ids,omitempty"`
+
+	// Warehouse identifiers
+	WarehouseIds []int64 `json:"warehouse_ids,omitempty"`
 
 	// 注意：字段为空（未按状态变更时间过滤）时必须省略，否则零值时间
-	// 0001-01-01T00:00:00Z 会被 Ozon 当作过滤条件，导致 /v3/posting/fbs/list 返回空列表。
+	// 0001-01-01T00:00:00Z 会被 Ozon 当作过滤条件，导致 /v4/posting/fbs/list 返回空列表。
 	LastChangedStatusDate *GetFBSShipmentsListFilterLastChangeDate `json:"last_changed_status_date,omitempty"`
 }
 
@@ -663,9 +665,12 @@ type GetFBSShipmentsListResponse struct {
 }
 
 type GetFBSShipmentsListResult struct {
+	// Cursor for selecting the next batch of data
+	Cursor string `json:"cursor"`
+
 	// Indicates that the response returned not the entire array of shipments:
 	//
-	//   - true — it is necessary to make a new request with a different offset value to get information on the remaining shipments;
+	//   - true — it is necessary to make a new request with the received cursor to get information on the remaining shipments;
 	//   - false — the entire array of shipments for the filter specified in the request was returned in the response
 	HasNext bool `json:"has_next"`
 
@@ -675,11 +680,12 @@ type GetFBSShipmentsListResult struct {
 
 // Returns a list of shipments for the specified time period: it shouldn't be longer than one year.
 //
-// You can filter shipments by their status. The list of available statuses is specified in the description of the filter.status parameter.
+// You can filter shipments by their status. The list of available statuses is specified in the description of the filter.statuses parameter.
 //
-// The true value of the has_next parameter in the response means there is not the entire array of shipments in the response. To get information on the remaining shipments, make a new request with a different offset value.
+// The true value of the has_next parameter in the response means there is not the entire array of shipments in the response. To get information on the remaining shipments, make a new request with the received cursor value.
 func (c FBS) GetFBSShipmentsList(ctx context.Context, params *GetFBSShipmentsListParams) (*GetFBSShipmentsListResponse, error) {
-	url := "/v3/posting/fbs/list"
+	// /v3/posting/fbs/list 已于 2026-08-31 停用，切换至 v4
+	url := "/v4/posting/fbs/list"
 
 	resp := &GetFBSShipmentsListResponse{}
 
@@ -1686,6 +1692,8 @@ func (c FBS) GetLabeling(ctx context.Context, params *GetLabelingParams) (*GetLa
 
 	resp := &GetLabelingResponse{}
 
+	// 注意：真实接口返回二进制 PDF（响应头 application/pdf），与文档示例的 JSON 不同。
+	// 保持原始实现：通过 Content-Type 选项让底层把响应体作为原始字节处理。
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, map[string]string{
 		"Content-Type": "application/pdf",
 	})
@@ -1727,6 +1735,8 @@ func (c FBS) PrintLabeling(ctx context.Context, params *PrintLabelingParams) (*P
 
 	resp := &PrintLabelingResponse{}
 
+	// 真实接口返回二进制 PDF（与文档示例的 JSON 不同）。
+	// 保持原始实现：通过 Content-Type 选项让底层把响应体作为原始字节处理。
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, map[string]string{
 		"Content-Type": "application/pdf",
 	})
@@ -1739,9 +1749,10 @@ func (c FBS) PrintLabeling(ctx context.Context, params *PrintLabelingParams) (*P
 	// {"code":3, "message":"INVALID_ARGUMENT","details":[{"@type":"type.googleapis.com/google.rpc.LocalizedMessage","locale":"en-US","message":"field: posting_numbers, reason: label not allowed for delivered postings."}]}
 	//fmt.Println("FBS PrintLabeling 3:", string(response.Data.([]byte)))
 
+	// 尝试按 JSON 解析：成功说明是错误响应体；失败说明是二进制文件（PDF）。
 	errJson := json.Unmarshal(response.Data.([]byte), resp)
-	// 说明是二进制文件，我擦泪
 	if errJson != nil {
+		// 说明是二进制文件
 		resp.ContentByte = response.Data.([]byte)
 		resp.Content = base64.StdEncoding.EncodeToString(resp.ContentByte)
 	} else {
@@ -1755,8 +1766,6 @@ func (c FBS) PrintLabeling(ctx context.Context, params *PrintLabelingParams) (*P
 	if resp.ContentByte == nil {
 		resp.ContentByte = []byte{}
 	}
-
-	//fmt.Println(fmt.Sprintf("resp 223: %+v", resp))
 
 	response.CopyCommonResponse(&resp.CommonResponse)
 
@@ -1798,6 +1807,7 @@ func (c FBS) CreateTaskForGeneratingLabel(ctx context.Context, params *CreateTas
 
 	resp := &CreateTaskForGeneratingLabelResponse{}
 
+	// 保持原始实现（与真实接口行为一致）。
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, map[string]string{
 		"Content-Type": "application/pdf",
 	})
@@ -2929,6 +2939,7 @@ func (c FBS) BarcodeFromProductShipment(ctx context.Context, params *BarcodeFrom
 
 	resp := &BarcodeFromProductShipmentResponse{}
 
+	// 真实接口返回二进制 PNG（与文档示例的 JSON 不同），保持原始实现。
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, map[string]string{
 		"Content-Type": "image/png",
 	})
@@ -2996,6 +3007,7 @@ func (c FBS) GetActPDF(ctx context.Context, params *GetActPDFParams) (*GetActPDF
 
 	resp := &GetActPDFResponse{}
 
+	// 真实接口返回二进制 PDF（与文档示例的 JSON 不同），保持原始实现。
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, map[string]string{
 		"Content-Type": "application/pdf",
 	})

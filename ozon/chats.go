@@ -16,23 +16,22 @@ type ListChatsParams struct {
 	// Chats filter
 	Filter *ListChatsFilter `json:"filter,omitempty"`
 
-	// Number of values in the response. The default value is 30. The maximum value is 1000
-	Limit int64 `json:"limit" default:"30"`
+	// Number of values in the response. The default value is 30. The maximum value is 100
+	Limit int64 `json:"limit,omitempty" default:"30"`
 
-	// Number of elements that will be skipped in the response.
-	// For example, if offset=10, the response will start with the 11th element found
-	Offset int64 `json:"offset,omitempty"`
+	// Cursor for selecting the next batch of data
+	Cursor string `json:"cursor,omitempty"`
 }
 
 type ListChatsFilter struct {
 	// Filter by chat status:
-	//   - All
-	//   - Opened
-	//   - Closed
-	ChatStatus string `json:"chat_status" default:"ALL"`
+	//   - ALL
+	//   - OPENED
+	//   - CLOSED
+	ChatStatus string `json:"chat_status,omitempty"`
 
 	// Filter by chats with unread messages
-	UnreadOnly bool `json:"unread_only"`
+	UnreadOnly bool `json:"unread_only,omitempty"`
 }
 
 type ListChatsResponse struct {
@@ -41,44 +40,52 @@ type ListChatsResponse struct {
 	// Chats data
 	Chats []ListChatsChatData `json:"chats"`
 
-	// Total number of chats
-	TotalChatsCount int64 `json:"total_chats_count"`
-
 	// Total number of unread messages
 	TotalUnreadCount int64 `json:"total_unread_count"`
+
+	// Cursor for selecting the next batch of data
+	Cursor string `json:"cursor"`
+
+	// Indicates that the response did not return all chats
+	HasNext bool `json:"has_next"`
 }
 
 type ListChatsChatData struct {
-	// Chat identifier
-	ChatId string `json:"chat_id"`
-
-	// Chat status:
-	//   - All
-	//   - Opened
-	//   - Closed
-	ChatStatus string `json:"chat_status"`
-
-	// Chat type:
-	//   - Seller_Support — support chat
-	//   - Buyer_Seller — chat with a customer
-	ChatType string `json:"chat_type"`
-
-	// Chat creation date
-	CreatedAt time.Time `json:"created_at"`
+	// Chat data
+	Chat ListChatsChatInfo `json:"chat"`
 
 	// Identifier of the first unread chat message
-	FirstUnreadMessageId uint64 `json:"first_unread_message_id"`
+	FirstUnreadMessageId string `json:"first_unread_message_id"`
 
 	// Identifier of the last message in the chat
-	LastMessageId uint64 `json:"last_message_id"`
+	LastMessageId string `json:"last_message_id"`
 
 	// Number of unread messages in the chat
 	UnreadCount int64 `json:"unread_count"`
 }
 
+type ListChatsChatInfo struct {
+	// Chat identifier
+	ChatId string `json:"chat_id"`
+
+	// Chat status:
+	//   - OPENED
+	//   - CLOSED
+	ChatStatus string `json:"chat_status"`
+
+	// Chat type:
+	//   - SELLER_SUPPORT — support chat
+	//   - BUYER_SELLER — chat with a customer
+	ChatType string `json:"chat_type"`
+
+	// Chat creation date
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// /v2/chat/list 已弃用（未来停用），切换至 /v3/chat/list。
 // Returns information about chats by specified filters
 func (c Chats) List(ctx context.Context, params *ListChatsParams) (*ListChatsResponse, error) {
-	url := "/v2/chat/list"
+	url := "/v3/chat/list"
 
 	resp := &ListChatsResponse{}
 

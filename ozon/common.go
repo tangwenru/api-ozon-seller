@@ -82,15 +82,17 @@ const (
 type ListDiscountRequestsStatus string
 
 const (
-	New            ListDiscountRequestsStatus = "NEW"
-	Seen           ListDiscountRequestsStatus = "SEEN"
-	Approved       ListDiscountRequestsStatus = "APPROVED"
-	PartlyApproved ListDiscountRequestsStatus = "PARTLY_APPROVED"
-	Declined       ListDiscountRequestsStatus = "DECLINED"
-	AutoDeclined   ListDiscountRequestsStatus = "AUTO_DECLINED"
-	DeclinedByUser ListDiscountRequestsStatus = "DECLINED_BY_USER"
-	Coupon         ListDiscountRequestsStatus = "COUPON"
-	Purchased      ListDiscountRequestsStatus = "PURCHASED"
+	// v2 status 枚举：ALL / NEW / APPROVED / DECLINED
+	DiscountRequestsAll ListDiscountRequestsStatus = "ALL"
+	New                 ListDiscountRequestsStatus = "NEW"
+	Seen                ListDiscountRequestsStatus = "SEEN"
+	Approved            ListDiscountRequestsStatus = "APPROVED"
+	PartlyApproved      ListDiscountRequestsStatus = "PARTLY_APPROVED"
+	Declined            ListDiscountRequestsStatus = "DECLINED"
+	AutoDeclined        ListDiscountRequestsStatus = "AUTO_DECLINED"
+	DeclinedByUser      ListDiscountRequestsStatus = "DECLINED_BY_USER"
+	Coupon              ListDiscountRequestsStatus = "COUPON"
+	Purchased           ListDiscountRequestsStatus = "PURCHASED"
 )
 
 type WorkingDay int

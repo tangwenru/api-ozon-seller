@@ -2,6 +2,7 @@ package ozon
 
 import (
 	"net/http"
+	"time"
 
 	ozonCore "github.com/tangwenru/api-ozon-seller"
 )
@@ -165,10 +166,16 @@ func WithAPIKey(apiKey string) ClientOption {
 	}
 }
 
+// defaultHttpClient 带超时的默认 HTTP 客户端。
+// 修复：http.DefaultClient 无超时，Ozon 请求挂起会永久阻塞调用方。
+var defaultHttpClient = &http.Client{
+	Timeout: 120 * time.Second,
+}
+
 func NewClient(opts ...ClientOption) *Client {
 	// default values
 	options := &ClientOptions{
-		client:  http.DefaultClient,
+		client:  defaultHttpClient,
 		baseUri: DefaultAPIBaseUrl,
 	}
 

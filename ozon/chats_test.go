@@ -23,25 +23,28 @@ func TestListChats(t *testing.T) {
 			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
 			&ListChatsParams{
 				Filter: &ListChatsFilter{
-					ChatStatus: "Opened",
+					ChatStatus: "OPENED",
 					UnreadOnly: true,
 				},
 				Limit:  1,
-				Offset: 0,
+				Cursor: "",
 			},
 			`{
 				"chats": [
 				  {
-            "chat_id": "5e767w03-b400-4y1b-a841-75319ca8a5c8",
-            "chat_status": "Opened",
-            "chat_type": "Seller_Support",
-            "created_at": "2022-07-22T08:07:19.581Z",
+            "chat": {
+              "chat_id": "5e767w03-b400-4y1b-a841-75319ca8a5c8",
+              "chat_status": "OPENED",
+              "chat_type": "SELLER_SUPPORT",
+              "created_at": "2022-07-22T08:07:19.581Z"
+            },
             "unread_count": 1,
-            "last_message_id": 3000000000128004274,
-            "first_unread_message_id": 3000000000118021931
+            "last_message_id": "3000000000128004274",
+            "first_unread_message_id": "3000000000118021931"
 				  }
 				],
-				"total_chats_count": 25,
+				"cursor": "",
+				"has_next": false,
 				"total_unread_count": 5
 			}`,
 		},
@@ -75,10 +78,10 @@ func TestListChats(t *testing.T) {
 
 		if resp.StatusCode == http.StatusOK {
 			if len(resp.Chats) > 0 {
-				if resp.Chats[0].ChatStatus == "" {
+				if resp.Chats[0].Chat.ChatStatus == "" {
 					t.Errorf("Chat status cannot be empty")
 				}
-				if resp.Chats[0].ChatType == "" {
+				if resp.Chats[0].Chat.ChatType == "" {
 					t.Errorf("Chat type cannot be empty")
 				}
 			}
