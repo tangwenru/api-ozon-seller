@@ -406,6 +406,58 @@ type PostingProduct struct {
 	IsBLRTraceable bool `json:"is_blr_traceable"`
 }
 
+// UnmarshalJSON 兼容 v3 / v4 两种商品价格形态：
+//   - v3：price 为字符串（如 "1390.000000"），币种在 currency_code；
+//   - v4（2026-08-31 后）：price 为对象 {"amount":"59","currency":"CNY"}，无 currency_code。
+//
+// 统一回填到 Price（金额字符串）与 CurrencyCode（币种），上层无需感知版本差异。
+func (p *PostingProduct) UnmarshalJSON(data []byte) error {
+	type rawProduct struct {
+		Name           string          `json:"name"`
+		OfferId        string          `json:"offer_id"`
+		CurrencyCode   string          `json:"currency_code"`
+		Price          json.RawMessage `json:"price"`
+		Quantity       int32           `json:"quantity"`
+		SKU            int64           `json:"sku"`
+		IsBLRTraceable bool            `json:"is_blr_traceable"`
+	}
+	var raw rawProduct
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	p.Name = raw.Name
+	p.OfferId = raw.OfferId
+	p.CurrencyCode = raw.CurrencyCode
+	p.Quantity = raw.Quantity
+	p.SKU = raw.SKU
+	p.IsBLRTraceable = raw.IsBLRTraceable
+
+	priceText := strings.TrimSpace(string(raw.Price))
+	if priceText == "" || priceText == "null" {
+		return nil
+	}
+
+	// v3：字符串金额
+	if priceText[0] == '"' {
+		return json.Unmarshal(raw.Price, &p.Price)
+	}
+
+	// v4：{amount, currency}
+	var priceObj struct {
+		Amount   string `json:"amount"`
+		Currency string `json:"currency"`
+	}
+	if err := json.Unmarshal(raw.Price, &priceObj); err != nil {
+		return err
+	}
+	p.Price = priceObj.Amount
+	if priceObj.Currency != "" {
+		p.CurrencyCode = priceObj.Currency
+	}
+	return nil
+}
+
 type FBSCustomer struct {
 	// Delivery address details
 	Address FBSCustomerAddress `json:"address"`
