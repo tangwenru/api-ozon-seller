@@ -32,11 +32,22 @@ type Response struct {
 	Data interface{}
 }
 
+// CopyCommonResponse 把外层 Response 的错误信息回填到业务响应。
+// 注意：Ozon 部分业务错误以 HTTP 200 + body 内 code != 0 返回，此时错误信息已直接
+// 解析进 resp 本身、而外层 r.Code/r.Message 为零值。若无条件覆盖会把真实错误清零，
+// 导致上层把「业务失败」当成「成功」（如订单同步返回 0 条仍报成功）。因此只在
+// r 有值时才回填，保留 resp 里已解析到的错误。
 func (r Response) CopyCommonResponse(rhs *CommonResponse) {
-	rhs.Code = r.Code
-	rhs.Details = r.Details
+	if r.Code != 0 {
+		rhs.Code = r.Code
+	}
+	if r.Message != "" {
+		rhs.Message = r.Message
+	}
+	if len(r.Details) > 0 {
+		rhs.Details = r.Details
+	}
 	rhs.StatusCode = r.StatusCode
-	rhs.Message = r.Message
 }
 
 func getDefaultValues(v reflect.Value) error {
