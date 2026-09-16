@@ -664,6 +664,50 @@ type GetFBSShipmentsListResponse struct {
 	Result GetFBSShipmentsListResult `json:"result"`
 }
 
+// UnmarshalJSON 兼容两种响应形态：
+//   - v4 实际返回：cursor / has_next / postings 平铺在顶层（不再有 result 包裹）；
+//   - 旧文档 / mock 形态：包在 result 里。
+//
+// 2026-08-31 Ozon 停用 v3 切换 v4 后，/v4/posting/fbs/list 不再返回 result 包裹，
+// 若只按 result 解析，真实订单会全部解析为空（表现为同步成功但 0 条订单）。
+func (r *GetFBSShipmentsListResponse) UnmarshalJSON(data []byte) error {
+	// 形态 1：顶层平铺（v4 真实返回）
+	var flat struct {
+		ozonCore.CommonResponse
+		Cursor   string        `json:"cursor"`
+		HasNext  bool          `json:"has_next"`
+		Postings []FBSPosting  `json:"postings"`
+	}
+	if err := json.Unmarshal(data, &flat); err != nil {
+		return err
+	}
+	if flat.Cursor != "" || flat.HasNext || len(flat.Postings) > 0 {
+		r.CommonResponse = flat.CommonResponse
+		r.Result.Cursor = flat.Cursor
+		r.Result.HasNext = flat.HasNext
+		r.Result.Postings = flat.Postings
+		return nil
+	}
+
+	// 形态 2：result 包裹（旧文档 / mock）
+	var wrapped struct {
+		ozonCore.CommonResponse
+		Result struct {
+			Cursor   string       `json:"cursor"`
+			HasNext  bool         `json:"has_next"`
+			Postings []FBSPosting `json:"postings"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(data, &wrapped); err != nil {
+		return err
+	}
+	r.CommonResponse = wrapped.CommonResponse
+	r.Result.Cursor = wrapped.Result.Cursor
+	r.Result.HasNext = wrapped.Result.HasNext
+	r.Result.Postings = wrapped.Result.Postings
+	return nil
+}
+
 type GetFBSShipmentsListResult struct {
 	// Cursor for selecting the next batch of data
 	Cursor string `json:"cursor"`
