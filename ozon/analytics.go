@@ -139,7 +139,19 @@ type GetAnalyticsDataResultDimension struct {
 //   - data is available for the last 3 months,
 //   - some of the data grouping methods and metrics aren't available.
 //
-// There are no restrictions for sellers with Premium subscription
+// There are no restrictions for sellers with Premium subscription.
+//
+// 2026-09-16 起 Ozon 收紧该方法限流（dev.ozon.ru news 797）：
+//
+//   - 所有卖家 ≤ 1 次/分钟；
+//   - 无订阅卖家 ≤ 50 次/天。
+//
+// SDK 已在客户端强制遵守（1 次/分钟 + 50 次/天，见 ozonCore.RateRule）：
+// 超频请求会在本地排队等待，当天配额用完直接返回 ozonCore.ErrDailyRateLimitExceeded。
+// 有 Premium 订阅的卖家可用 ozonCore.RegisterRateRule 覆盖默认规则。
+//
+// 注意：其余 analytics 系列接口（product-queries、stock_on_warehouses 等）
+// 文档未注明具体频率限制，SDK 不为其限速。
 func (c Analytics) GetAnalyticsData(ctx context.Context, params *GetAnalyticsDataParams) (*GetAnalyticsDataResponse, error) {
 	url := "/v1/analytics/data"
 

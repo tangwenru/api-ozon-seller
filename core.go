@@ -51,7 +51,22 @@ func (r Response) CopyCommonResponse(rhs *CommonResponse) {
 }
 
 func getDefaultValues(v reflect.Value) error {
-	vValue := v.Elem()
+	// 只对「结构体」类型的请求体应用 default 标签语义；
+	// map / slice 等其它类型（如 /v1/notification/* 直接传 map[string]interface{}）
+	// 没有 default 语义，直接跳过。
+	// 此前这里无条件 v.Elem()，对 map 调用 Elem 会 panic
+	// （reflect: call of reflect.Value.Elem on map Value，线上 notifysubscribe 崩溃根因）。
+	if v.Kind() == reflect.Ptr {
+		if v.IsNil() {
+			return nil
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
+
+	vValue := v
 	vType := vValue.Type()
 
 	for i := 0; i < vType.NumField(); i++ {

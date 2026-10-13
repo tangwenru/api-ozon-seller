@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -23,19 +24,24 @@ type Client struct {
 	Options map[string]string
 
 	client HttpClient
+
+	// rateLimitEnabled 是否启用客户端限流（mock 客户端关闭，避免拖慢测试）。
+	rateLimitEnabled bool
 }
 
 func NewClient(client HttpClient, baseUrl string, opts map[string]string) *Client {
 	return &Client{
-		Options: opts,
-		client:  client,
-		baseUrl: baseUrl,
+		Options:          opts,
+		client:           client,
+		baseUrl:          baseUrl,
+		rateLimitEnabled: true,
 	}
 }
 
 func NewMockClient(handler http.HandlerFunc) *Client {
 	return &Client{
-		client: NewMockHttpClient(handler),
+		client:           NewMockHttpClient(handler),
+		rateLimitEnabled: false,
 	}
 }
 
@@ -79,8 +85,13 @@ const (
 
 // Request 发送请求并解析响应。
 //
+// 发送前先按路径匹配进程级限流规则（见 rate_limit.go）：
+// 文档有明确数字的接口按其限额限速；未配置的接口统一按 ≤5 次/秒 兜底限频。
+// 等待过程可被 ctx 取消；当天配额用完时返回 ErrDailyRateLimitExceeded。
+//
 // 对 429 Too Many Requests 会读取 Retry-After 头做退避重试（最多 3 次）：
 // Ozon 的限流错误不会处理请求，因此对所有方法重试都是安全的。
+// 商品类方法的 429 会带 Item-Retry-After（分钟），getRetryAfter 已优先处理。
 func (c Client) Request(
 	ctx context.Context,
 	method string,
@@ -89,6 +100,22 @@ func (c Client) Request(
 	resp interface{},
 	options map[string]string,
 ) (*Response, error) {
+	if c.rateLimitEnabled {
+		// 具体规则优先；未配置的接口走兜底限频（≤5 次/秒）。
+		rulePath, rule := globalRateLimiter.ruleFor(path)
+		// 按 Client-Id + 路径 隔离配额，不同店铺互不影响。
+		key := c.Options["Client-Id"] + "|" + rulePath
+		if err := globalRateLimiter.acquire(ctx, key, rule); err != nil {
+			if errors.Is(err, ErrDailyRateLimitExceeded) {
+				return nil, fmt.Errorf(
+					"%w: %s（%d 次/24 小时，隔天自动恢复）",
+					ErrDailyRateLimitExceeded, path, rule.DailyLimit,
+				)
+			}
+			return nil, err
+		}
+	}
+
 	delay := 1 * time.Second
 
 	for attempt := 0; ; attempt++ {

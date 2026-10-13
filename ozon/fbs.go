@@ -1,6 +1,7 @@
 package ozon
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -128,6 +129,16 @@ type FBSPosting struct {
 
 	// Date when the shipment was transferred for delivery
 	DeliveringDate time.Time `json:"delivering_date"`
+
+	// Delivery scheme
+	//
+	// Possible values:
+	//   - fbs
+	//   - fbo
+	//   - crossborder
+	//   - realFBS
+	//   - Express
+	DeliverySchema string `json:"delivery_schema"`
 
 	// Delivery method
 	DeliveryMethod FBSDeliveryMethod `json:"delivery_method"`
@@ -726,9 +737,9 @@ func (r *GetFBSShipmentsListResponse) UnmarshalJSON(data []byte) error {
 	// 形态 1：顶层平铺（v4 真实返回）
 	var flat struct {
 		ozonCore.CommonResponse
-		Cursor   string        `json:"cursor"`
-		HasNext  bool          `json:"has_next"`
-		Postings []FBSPosting  `json:"postings"`
+		Cursor   string       `json:"cursor"`
+		HasNext  bool         `json:"has_next"`
+		Postings []FBSPosting `json:"postings"`
 	}
 	if err := json.Unmarshal(data, &flat); err != nil {
 		return err
@@ -1127,6 +1138,16 @@ type GetShipmentDataByIdentifierResult struct {
 
 	// Date when the shipment was transferred for delivery
 	DeliveringDate time.Time `json:"delivering_date"`
+
+	// Delivery scheme
+	//
+	// Possible values:
+	//   - fbs
+	//   - fbo
+	//   - crossborder
+	//   - realFBS
+	//   - Express
+	DeliverySchema string `json:"delivery_schema"`
 
 	// Delivery method
 	DeliveryMethod FBSDeliveryMethod `json:"delivery_method"`
@@ -2543,38 +2564,64 @@ func (c FBS) GetDigitalAct(ctx context.Context, params *GetDigitalActParams) (*G
 }
 
 type PackageUnitLabelsParams struct {
-	// Document generation task number (freight identifier) received from the POST `/v2/posting/fbs/act/create` method.
+	// Document generation task number (freight identifier) received from the POST `/v1/carriage/create` method.
 	Id int64 `json:"id"`
 }
 
 type PackageUnitLabelsResponse struct {
 	ozonCore.CommonResponse
 
-	// Content
-	Content string `json:"content"`
+	// File content in binary format (base64)
+	Content string `json:"file_content"`
 
-	// Name
-	Name string `json:"name"`
+	// File name
+	Name string `json:"file_name"`
 
-	// Type
-	Type string `json:"type"`
+	// File type
+	Type string `json:"content_type"`
 }
 
 // Method creates package unit labels
-func (c FBS) PackageUnitLabel(ctx context.Context, params *PackageUnitLabelsParams) (*PackageUnitLabelsResponse, error) {
+// PackageUnitLabel 大包（货位）标签：返回原始 PDF 字节。
+// Ozon 实际响应 Content-Type: application/pdf（原始字节，非 JSON），
+// 因此用非 JSON 解析模式取原始响应体；业务错误仍以 JSON（code/message）返回，需识别。
+func (c FBS) PackageUnitLabel(ctx context.Context, params *PackageUnitLabelsParams) ([]byte, error) {
 	url := "/v2/posting/fbs/act/get-container-labels"
 
 	resp := &PackageUnitLabelsResponse{}
 
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, map[string]string{
-		"Content-Type": "application/json",
+		"Content-Type": "application/pdf", // 响应为原始 PDF 字节，跳过 JSON 解析
 	})
 	if err != nil {
 		return nil, err
 	}
 	response.CopyCommonResponse(&resp.CommonResponse)
 
-	return resp, nil
+	body, ok := response.Data.([]byte)
+	if !ok {
+		return nil, errors.New("大包标签响应格式异常")
+	}
+	if len(body) == 0 {
+		return nil, errors.New("大包标签内容为空")
+	}
+	// 非 PDF：Ozon 偶发在 approve 后立即请求时返回 JSON 业务错误（code/message）
+	if !bytes.HasPrefix(body, []byte("%PDF")) {
+		var errResp ozonCore.CommonResponse
+		if json.Unmarshal(body, &errResp) == nil && (errResp.Code != 0 || errResp.Message != "") {
+			return nil, fmt.Errorf("ozon 大包标签接口返回错误（code=%d）：%s", errResp.Code, errResp.Message)
+		}
+		return nil, errors.New("大包标签响应非 PDF：" + string(body[:minInt(len(body), 200)]))
+	}
+	return body, nil
+}
+
+// minInt 取较小值（避免与 Go 1.21+ 内置 min 泛型混淆）。
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 type OpenDisputeOverShipmentParams struct {
