@@ -100,19 +100,20 @@ func TestAddToPromotion(t *testing.T) {
 				ActionId: 60564,
 				Products: []AddProductToPromotionProduct{
 					{
-						ProductId:   1389,
-						ActionPrice: 356,
-						Stock:       10,
+						ProductId: 1389,
+						ActionPrice: PromotionMoney{
+							Amount:   "356",
+							Currency: "RUB",
+						},
+						Stock: 10,
 					},
 				},
 			},
 			`{
-			"result": {
-				"product_ids": [
-						1389
-					],
-					"rejected": []
-				}
+				"active_product_ids": [1389],
+				"deactivated_product_ids": [],
+				"rejected": [],
+				"warnings": []
 			}`,
 		},
 		// Test No Client-Id or Api-Key
@@ -144,7 +145,7 @@ func TestAddToPromotion(t *testing.T) {
 		}
 
 		if resp.StatusCode == http.StatusOK {
-			if len(resp.Result.ProductIds) != len(test.params.Products) {
+			if len(resp.ActiveProductIds) != len(test.params.Products) {
 				t.Errorf("Length of products in response and request must be equal")
 			}
 		}

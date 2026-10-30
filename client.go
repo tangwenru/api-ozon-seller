@@ -117,6 +117,9 @@ func (c Client) Request(
 	}
 
 	delay := 1 * time.Second
+	// 单次 429 等待上限：Ozon 的 Item-Retry-After 可能是分钟级（如 60），
+	// 直接等待会让 goroutine 睡几十分钟；超过上限先返回交给下一轮任务重试。
+	const maxRetryWait = 2 * time.Minute
 
 	for attempt := 0; ; attempt++ {
 		response, err := c.doRequest(ctx, method, path, req, resp, options)
@@ -128,6 +131,9 @@ func (c Client) Request(
 			if retryAfter := getRetryAfter(response); retryAfter > 0 {
 				delay = retryAfter
 			}
+			if delay > maxRetryWait {
+				delay = maxRetryWait
+			}
 
 			select {
 			case <-time.After(delay):
@@ -135,6 +141,9 @@ func (c Client) Request(
 				return response, ctx.Err()
 			}
 			delay *= 2
+			if delay > maxRetryWait {
+				delay = maxRetryWait
+			}
 			continue
 		}
 

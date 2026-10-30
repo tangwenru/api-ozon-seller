@@ -52,10 +52,23 @@ type GetStocksInfoResponse struct {
 	Cursor string `json:"cursor"`
 
 	// The number of unique products for which information about stocks is displayed
+	//
+	// Deprecated: 2026-11-23 起 Ozon 停用 total，改用 TotalItems（Count() 已兼容两者）。
 	Total int32 `json:"total"`
+
+	// 商品总数（2026-11-23 起替代 total）
+	TotalItems int32 `json:"total_items"`
 
 	// Product details
 	Items []GetStocksInfoResultItem `json:"items"`
+}
+
+// Count 返回商品总数，兼容 2026-11-23 起 total → total_items 的变更。
+func (r GetStocksInfoResponse) Count() int32 {
+	if r.TotalItems > 0 {
+		return r.TotalItems
+	}
+	return r.Total
 }
 
 type GetStocksInfoResultItem struct {
@@ -1093,11 +1106,24 @@ type GetListOfProductsResult struct {
 	Items []GetListOfProductsResultItem `json:"items"`
 
 	// Total number of products
+	//
+	// Deprecated: 2026-11-23 起 Ozon 停用 total，改用 TotalItems（Count() 已兼容两者）。
 	Total int32 `json:"total"`
+
+	// 商品总数（2026-11-23 起替代 total）
+	TotalItems int32 `json:"total_items"`
 
 	// Identifier of the last value on the page.
 	// To get the next values, specify the received value in the next request in the last_id parameter
 	LastId string `json:"last_id"`
+}
+
+// Count 返回商品总数，兼容 2026-11-23 起 total → total_items 的变更。
+func (r GetListOfProductsResult) Count() int32 {
+	if r.TotalItems > 0 {
+		return r.TotalItems
+	}
+	return r.Total
 }
 
 // GetListOfProductsResultItem describes a single product item in the /v3/product/list response.
@@ -2206,7 +2232,20 @@ type GetProductPriceInfoResponse struct {
 	Cursor string `json:"cursor"`
 
 	// Products number in the list
+	//
+	// Deprecated: 2026-11-23 起 Ozon 停用 total，改用 TotalItems（Count() 已兼容两者）。
 	Total int32 `json:"total"`
+
+	// 商品总数（2026-11-23 起替代 total）
+	TotalItems int32 `json:"total_items"`
+}
+
+// Count 返回商品总数，兼容 2026-11-23 起 total → total_items 的变更。
+func (r GetProductPriceInfoResponse) Count() int32 {
+	if r.TotalItems > 0 {
+		return r.TotalItems
+	}
+	return r.Total
 }
 
 type GetProductPriceInfoResultItem struct {

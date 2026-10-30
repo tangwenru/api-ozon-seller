@@ -3,6 +3,8 @@ package ozon
 import (
 	"context"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	ozonCore "github.com/tangwenru/api-ozon-seller"
@@ -37,6 +39,9 @@ type GetAvailablePromotionsResult struct {
 
 	// Promotion end date
 	DateEnd string `json:"date_end"`
+
+	// 商品自动加入活动的时间点（统一价格逻辑后新增）
+	AutoAddDates []string `json:"auto_add_dates"`
 
 	// Promotion freeze date.
 	//
@@ -96,30 +101,58 @@ type AddProductToPromotionParams struct {
 	Products []AddProductToPromotionProduct `json:"products"`
 }
 
+// PromotionMoney 统一价格逻辑后的金额对象。
+// action_price 从「活动价」变成了「价格上限(предельная цена)」。
+type PromotionMoney struct {
+	// Amount 金额，字符串，例如 "88" / "88.5"
+	Amount string `json:"amount"`
+
+	// Currency 币种，Ozon Seller API 固定 RUB
+	Currency string `json:"currency"`
+}
+
+// PromotionProductId 兼容 Ozon 把 uint64 商品 ID 序列化成「数字」或「字符串」两种形态
+type PromotionProductId uint64
+
+func (p *PromotionProductId) UnmarshalJSON(data []byte) error {
+	s := strings.Trim(string(data), `"`)
+	if s == "" || s == "null" {
+		*p = 0
+		return nil
+	}
+	v, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return err
+	}
+	*p = PromotionProductId(v)
+	return nil
+}
+
 type AddProductToPromotionProduct struct {
 	// Product identifier
 	ProductId float64 `json:"product_id"`
 
-	// Promotional product price
-	ActionPrice float64 `json:"action_price"`
+	// 价格上限(предельная цена)：<= 活动限额则加入，> 限额则移出；同时写入商品卡价格
+	ActionPrice PromotionMoney `json:"action_price"`
 
-	// Number of product units in a stock discount type promotion
-	Stock float64 `json:"stock"`
+	// 仅「Промокоды」活动需要；「Эластичный бустинг」「Максимальный бустинг」不要传
+	Stock float64 `json:"stock,omitempty"`
 }
 
 type AddProductToPromotionResponse struct {
 	ozonCore.CommonResponse
 
-	// Method result
-	Result AddProductToPromotionResult `json:"result"`
-}
+	// 已加入/更新的商品 ID（Ozon 文档标 string，实际可能返回 number）
+	ActiveProductIds []PromotionProductId `json:"active_product_ids"`
 
-type AddProductToPromotionResult struct {
-	// List of product identifiers that were added to the promotion
-	ProductIds []float64 `json:"product_ids"`
+	// 被移出活动的商品 ID
+	DeactivatedProductIds []PromotionProductId `json:"deactivated_product_ids"`
 
-	// List of products that weren't added to the promotion
+	// 未成功加入活动的商品
 	Rejected []AddProductToPromotionResultRejected `json:"rejected"`
+
+	// 被移出活动的原因
+	Warnings []AddProductToPromotionResultRejected `json:"warnings"`
 }
 
 type AddProductToPromotionResultRejected struct {
@@ -130,9 +163,13 @@ type AddProductToPromotionResultRejected struct {
 	Reason string `json:"reason"`
 }
 
-// A method for adding products to an available promotion
+// AddToPromotion 参加活动 / 更新活动商品价格上限。
+//
+// 2026-10-13 起 Ozon 停用 /v1/actions/products/activate（统一价格逻辑），
+// 该接口返回 400 {"code":9,"message":"the method is blocked due to unified price logic..."}。
+// 改调 /v1/actions/products/update：action_price 是价格上限，会写入商品卡。
 func (c Promotions) AddToPromotion(ctx context.Context, params *AddProductToPromotionParams) (*AddProductToPromotionResponse, error) {
-	url := "/v1/actions/products/activate"
+	url := "/v1/actions/products/update"
 
 	resp := &AddProductToPromotionResponse{}
 

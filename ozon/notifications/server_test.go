@@ -479,7 +479,9 @@ func TestNotificationServer(t *testing.T) {
 	server.Register(ChatClosedType, comparatorWith(chatClosedTest(t).object))
 	go func() {
 		if err := server.Run(); err != nil {
-			t.Fatalf("notification server is down: %s", err)
+			// testing.T.Fatalf 会调用 runtime.Goexit，只能从测试 goroutine 调用；
+			// 后台 server goroutine 用 Errorf。
+			t.Errorf("notification server is down: %s", err)
 		}
 	}()
 
@@ -613,7 +615,9 @@ func TestNotificationServerErrors(t *testing.T) {
 	})
 	go func() {
 		if err := server.Run(); err != nil {
-			t.Fatalf("notification server is down: %s", err)
+			// testing.T.Fatalf 会调用 runtime.Goexit，只能从测试 goroutine 调用；
+			// 后台 server goroutine 用 Errorf。
+			t.Errorf("notification server is down: %s", err)
 		}
 	}()
 
@@ -626,13 +630,11 @@ func TestNotificationServerErrors(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 			continue
-			continue
 		}
 
 		gotJson, err := ioutil.ReadAll(httpResp.Body)
 		if err != nil {
 			t.Error(err)
-			continue
 			continue
 		}
 
@@ -642,18 +644,15 @@ func TestNotificationServerErrors(t *testing.T) {
 		if err != nil {
 			t.Error(err)
 			continue
-			continue
 		}
 		err = json.Unmarshal([]byte(testCase.response), &expected)
 		if err != nil {
 			t.Error(err)
 			continue
-			continue
 		}
 
 		if err := compare(expected, got); err != nil {
 			t.Error(err)
-			continue
 			continue
 		}
 	}

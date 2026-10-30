@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -1352,6 +1353,25 @@ type ShipmentProduct struct {
 	Dimensions ProductDimension `json:"dimensions"`
 }
 
+// UnmarshalJSON 必须显式解析 dimensions：
+// 嵌入的 PostingProduct 有自定义 UnmarshalJSON，Promoted method 会让
+// ShipmentProduct 只解析基类字段，dimensions 永远是零值。
+func (p *ShipmentProduct) UnmarshalJSON(data []byte) error {
+	var base PostingProduct
+	if err := json.Unmarshal(data, &base); err != nil {
+		return err
+	}
+	var extra struct {
+		Dimensions ProductDimension `json:"dimensions"`
+	}
+	if err := json.Unmarshal(data, &extra); err != nil {
+		return err
+	}
+	p.PostingProduct = base
+	p.Dimensions = extra.Dimensions
+	return nil
+}
+
 type ProductDimension struct {
 	// Package height
 	Height string `json:"height"`
@@ -1841,13 +1861,236 @@ type PrintLabelingResponse struct {
 	ContentType string `json:"content_type"`
 }
 
-// Generates a PDF file with a labeling for the specified shipments. You can pass a maximum of 20 identifiers in one request.
-// If an error occurs for at least one shipment, the labeling will not be generated for all shipments in the request.
+// 面单生成已改为异步任务（2026-11-02 起旧同步接口 /v2/posting/fbs/package-label 下线）：
 //
-// We recommend requesting the label 45-60 seconds after the shipments were packed.
+//	POST /v3/posting/fbs/package-label/create {posting_numbers:[...]} → {tasks:[{task_id,task_type}]}
+//	POST /v2/posting/fbs/package-label/get    {task_id}               → {status:{code},file_url}
 //
-// The next postings are not ready error means that the label is not ready. Try again later
+// 生成完成后下载 file_url 得到 PDF。
+var (
+	packageLabelPollInterval = 3 * time.Second
+	packageLabelPollTimeout  = 90 * time.Second
+)
+
+type CreatePackageLabelTaskParams struct {
+	// 需要生成面单的寄件号（一次最多 1000 个）
+	PostingNumbers []string `json:"posting_numbers"`
+}
+
+type CreatePackageLabelTaskResponse struct {
+	ozonCore.CommonResponse
+
+	Tasks []PackageLabelTask `json:"tasks"`
+}
+
+type PackageLabelTask struct {
+	TaskId int64 `json:"task_id"`
+
+	// big_label — 普通面单；small_label — 小面单
+	TaskType string `json:"task_type"`
+}
+
+type GetPackageLabelFileParams struct {
+	TaskId int64 `json:"task_id"`
+}
+
+type GetPackageLabelFileResponse struct {
+	ozonCore.CommonResponse
+
+	Status PackageLabelTaskStatus `json:"status"`
+
+	// 面单文件地址（生成完成后才有）
+	FileUrl string `json:"file_url"`
+
+	Error PackageLabelTaskError `json:"error"`
+}
+
+type PackageLabelTaskStatus struct {
+	// pending / in_progress / completed / error
+	Code                 string `json:"code"`
+	PostingsCount        int32  `json:"postings_count"`
+	PrintedPostingsCount int32  `json:"printed_postings_count"`
+
+	UnprintedPostings []PackageLabelUnprintedPosting `json:"unprinted_postings"`
+}
+
+type PackageLabelUnprintedPosting struct {
+	PostingNumber string `json:"posting_number"`
+	Message       string `json:"message"`
+}
+
+type PackageLabelTaskError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// CreatePackageLabelTask 创建异步面单生成任务。
+func (c FBS) CreatePackageLabelTask(ctx context.Context, params *CreatePackageLabelTaskParams) (*CreatePackageLabelTaskResponse, error) {
+	url := "/v3/posting/fbs/package-label/create"
+
+	resp := &CreatePackageLabelTaskResponse{}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
+	if err != nil {
+		return nil, err
+	}
+	response.CopyCommonResponse(&resp.CommonResponse)
+
+	return resp, nil
+}
+
+// GetPackageLabelFile 查询面单任务状态 / 文件地址。
+func (c FBS) GetPackageLabelFile(ctx context.Context, params *GetPackageLabelFileParams) (*GetPackageLabelFileResponse, error) {
+	url := "/v2/posting/fbs/package-label/get"
+
+	resp := &GetPackageLabelFileResponse{}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
+	if err != nil {
+		return nil, err
+	}
+	response.CopyCommonResponse(&resp.CommonResponse)
+
+	return resp, nil
+}
+
+// Generates a PDF file with a labeling for the specified shipments.
+//
+// 优先走新版异步接口（create + get + 下载 file_url）；
+// 若新版失败，则兜底走旧同步接口（2026-11-02 前仍可用）。
 func (c FBS) PrintLabeling(ctx context.Context, params *PrintLabelingParams) (*PrintLabelingResponse, error) {
+	asyncResp, asyncErr := c.printLabelingAsync(ctx, params)
+	if asyncErr == nil {
+		return asyncResp, nil
+	}
+
+	legacyResp, legacyErr := c.printLabelingLegacy(ctx, params)
+	if legacyErr == nil {
+		return legacyResp, nil
+	}
+
+	return nil, fmt.Errorf("新版面单接口失败：%v；旧版面单接口失败：%v", asyncErr, legacyErr)
+}
+
+func (c FBS) printLabelingAsync(ctx context.Context, params *PrintLabelingParams) (*PrintLabelingResponse, error) {
+	if params == nil || len(params.PostingNumber) == 0 {
+		return nil, errors.New("posting_number 不能为空")
+	}
+
+	createResp, err := c.CreatePackageLabelTask(ctx, &CreatePackageLabelTaskParams{
+		PostingNumbers: params.PostingNumber,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if createResp.Code != 0 {
+		return nil, errors.New(createResp.Message)
+	}
+
+	// 优先普通面单（big_label），没有就取第一个任务
+	taskId := int64(0)
+	for _, task := range createResp.Tasks {
+		if task.TaskType == "big_label" {
+			taskId = task.TaskId
+			break
+		}
+	}
+	if taskId == 0 && len(createResp.Tasks) > 0 {
+		taskId = createResp.Tasks[0].TaskId
+	}
+	if taskId == 0 {
+		return nil, errors.New("Ozon 未返回面单任务")
+	}
+
+	deadline := time.Now().Add(packageLabelPollTimeout)
+	for {
+		getResp, err := c.GetPackageLabelFile(ctx, &GetPackageLabelFileParams{TaskId: taskId})
+		if err != nil {
+			return nil, err
+		}
+		if getResp.Code != 0 {
+			return nil, errors.New(getResp.Message)
+		}
+
+		switch getResp.Status.Code {
+		case "completed":
+			if getResp.FileUrl == "" {
+				return nil, errors.New("面单任务已完成但没有返回文件地址")
+			}
+
+			content, err := downloadPackageLabelFile(ctx, getResp.FileUrl)
+			if err != nil {
+				return nil, err
+			}
+
+			fileName := "package-label.pdf"
+			if len(params.PostingNumber) > 0 {
+				fileName = params.PostingNumber[0] + ".pdf"
+			}
+
+			return &PrintLabelingResponse{
+				Content:     base64.StdEncoding.EncodeToString(content),
+				ContentByte: content,
+				FileName:    fileName,
+				ContentType: "application/pdf",
+			}, nil
+
+		case "error":
+			message := getResp.Error.Message
+			if message == "" {
+				message = "Ozon 面单生成失败"
+			}
+			return nil, errors.New(message)
+
+		case "pending", "in_progress", "":
+			// 继续轮询
+
+		default:
+			// 未知状态也继续等，最终由超时兜底
+		}
+
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("面单生成超时（任务 %d，状态 %s）", taskId, getResp.Status.Code)
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(packageLabelPollInterval):
+		}
+	}
+}
+
+func downloadPackageLabelFile(ctx context.Context, fileUrl string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileUrl, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("下载面单失败：HTTP %d", response.StatusCode)
+	}
+
+	content, err := io.ReadAll(io.LimitReader(response.Body, 32<<20))
+	if err != nil {
+		return nil, err
+	}
+	if len(content) == 0 {
+		return nil, errors.New("下载面单失败：文件为空")
+	}
+
+	return content, nil
+}
+
+// printLabelingLegacy 旧同步接口（/v2/posting/fbs/package-label），2026-11-02 下线，仅作过渡兜底。
+func (c FBS) printLabelingLegacy(ctx context.Context, params *PrintLabelingParams) (*PrintLabelingResponse, error) {
 	url := "/v2/posting/fbs/package-label"
 
 	resp := &PrintLabelingResponse{}
@@ -1859,12 +2102,8 @@ func (c FBS) PrintLabeling(ctx context.Context, params *PrintLabelingParams) (*P
 	})
 
 	if err != nil {
-		fmt.Println("FBS PrintLabeling 2:", err)
 		return nil, err
 	}
-
-	// {"code":3, "message":"INVALID_ARGUMENT","details":[{"@type":"type.googleapis.com/google.rpc.LocalizedMessage","locale":"en-US","message":"field: posting_numbers, reason: label not allowed for delivered postings."}]}
-	//fmt.Println("FBS PrintLabeling 3:", string(response.Data.([]byte)))
 
 	// 尝试按 JSON 解析：成功说明是错误响应体；失败说明是二进制文件（PDF）。
 	errJson := json.Unmarshal(response.Data.([]byte), resp)

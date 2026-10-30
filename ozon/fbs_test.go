@@ -3,8 +3,12 @@ package ozon
 import (
 	"context"
 	"encoding/base64"
+	"io"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	ozonCore "github.com/tangwenru/api-ozon-seller"
 )
@@ -1166,71 +1170,105 @@ func TestGetLabeling(t *testing.T) {
 }
 
 func TestPrintLabeling(t *testing.T) {
-	t.Parallel()
+	// 加速轮询，避免测试真的等 3 秒
+	oldInterval, oldTimeout := packageLabelPollInterval, packageLabelPollTimeout
+	packageLabelPollInterval, packageLabelPollTimeout = 5*time.Millisecond, 3*time.Second
+	defer func() {
+		packageLabelPollInterval, packageLabelPollTimeout = oldInterval, oldTimeout
+	}()
 
-	tests := []struct {
-		statusCode  int
-		headers     map[string]string
-		params      *PrintLabelingParams
-		response    string
-		expectError bool
-	}{
-		// Test Ok —— 真实接口返回二进制 PDF（与文档示例的 JSON 不同）
-		{
-			http.StatusOK,
-			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
-			&PrintLabelingParams{
-				PostingNumber: []string{"48173252-0034-4"},
-			},
-			"%PDF-1.7 fake binary pdf content",
-			false,
-		},
-		// Test No Client-Id or Api-Key —— JSON 错误体 → 函数返回 error
-		{
-			http.StatusUnauthorized,
-			map[string]string{},
-			&PrintLabelingParams{},
-			`{
-				"code": 16,
-				"message": "Client-Id and Api-Key headers are required"
-			}`,
-			true,
-		},
-	}
+	pdfContent := "%PDF-1.7 fake binary pdf content"
+	fileServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/pdf")
+		_, _ = w.Write([]byte(pdfContent))
+	}))
+	defer fileServer.Close()
 
-	for _, test := range tests {
-		c := NewMockClient(ozonCore.NewMockHttpHandler(test.statusCode, test.response, test.headers))
-
-		ctx, _ := context.WithTimeout(context.Background(), testTimeout)
-		resp, err := c.FBS().PrintLabeling(ctx, test.params)
-		if test.expectError {
-			if err == nil {
-				t.Error("expected error for JSON error response")
+	t.Run("async success（优先 big_label，轮询到 completed 后下载文件）", func(t *testing.T) {
+		getCalls := 0
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			// NewMockClient 的 baseUrl 为空，url.JoinPath 后路径没有前导 /
+			switch strings.TrimPrefix(r.URL.Path, "/") {
+			case "v3/posting/fbs/package-label/create":
+				_, _ = w.Write([]byte(`{"tasks":[{"task_id":7,"task_type":"small_label"},{"task_id":8,"task_type":"big_label"}]}`))
+			case "v2/posting/fbs/package-label/get":
+				getCalls++
+				body, _ := io.ReadAll(r.Body)
+				if !strings.Contains(string(body), `"task_id":8`) {
+					t.Errorf("should poll big_label task 8, got body %s", string(body))
+				}
+				if getCalls < 2 {
+					_, _ = w.Write([]byte(`{"status":{"code":"pending"}}`))
+					return
+				}
+				_, _ = w.Write([]byte(`{"status":{"code":"completed"},"file_url":"` + fileServer.URL + `/label.pdf"}`))
+			default:
+				t.Errorf("unexpected path: %s", r.URL.Path)
 			}
-			continue
 		}
+
+		c := NewMockClient(handler)
+		resp, err := c.FBS().PrintLabeling(context.Background(), &PrintLabelingParams{
+			PostingNumber: []string{"48173252-0034-4"},
+		})
 		if err != nil {
-			t.Error(err)
-			continue
+			t.Fatal(err)
+		}
+		if string(resp.ContentByte) != pdfContent {
+			t.Errorf("ContentByte mismatch: %q", string(resp.ContentByte))
+		}
+		if resp.Content != base64.StdEncoding.EncodeToString([]byte(pdfContent)) {
+			t.Error("Content must be base64 of downloaded pdf")
+		}
+		if resp.ContentType != "application/pdf" || resp.FileName != "48173252-0034-4.pdf" {
+			t.Errorf("unexpected meta: %s %s", resp.ContentType, resp.FileName)
+		}
+		if getCalls < 2 {
+			t.Errorf("expected at least 2 polls, got %d", getCalls)
+		}
+	})
+
+	t.Run("async 任务报错 → 兜底旧同步接口", func(t *testing.T) {
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			// NewMockClient 的 baseUrl 为空，url.JoinPath 后路径没有前导 /
+			switch strings.TrimPrefix(r.URL.Path, "/") {
+			case "v3/posting/fbs/package-label/create":
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"code":3,"message":"new method unavailable"}`))
+			case "v2/posting/fbs/package-label":
+				_, _ = w.Write([]byte(pdfContent))
+			default:
+				t.Errorf("unexpected path: %s", r.URL.Path)
+			}
 		}
 
-		if resp.StatusCode != test.statusCode {
-			t.Errorf("got wrong status code: got: %d, expected: %d", resp.StatusCode, test.statusCode)
+		c := NewMockClient(handler)
+		resp, err := c.FBS().PrintLabeling(context.Background(), &PrintLabelingParams{
+			PostingNumber: []string{"48173252-0034-4"},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(resp.ContentByte) != pdfContent {
+			t.Errorf("legacy fallback ContentByte mismatch: %q", string(resp.ContentByte))
+		}
+	})
+
+	t.Run("新旧接口都失败 → 返回合并错误", func(t *testing.T) {
+		handler := func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte(`{"code":16,"message":"Client-Id and Api-Key headers are required"}`))
 		}
 
-		if resp.StatusCode == http.StatusOK {
-			if resp.Content == "" {
-				t.Error("content cannot be empty")
-			}
-			if resp.ContentByte == nil || len(resp.ContentByte) == 0 {
-				t.Error("ContentByte cannot be empty")
-			}
-			expectedContent := base64.StdEncoding.EncodeToString([]byte(test.response))
-			if resp.Content != expectedContent {
-				t.Errorf("Content must be base64 of raw binary body: got %q, expected %q", resp.Content, expectedContent)
-			}
+		c := NewMockClient(handler)
+		_, err := c.FBS().PrintLabeling(context.Background(), &PrintLabelingParams{})
+		if err == nil {
+			t.Fatal("expected error")
 		}
-	}
+		if !strings.Contains(err.Error(), "新版面单接口失败") {
+			t.Errorf("unexpected error: %v", err)
+		}
+	})
 }
 
 func TestCreateTaskForGeneratingLabel(t *testing.T) {
@@ -2039,11 +2077,7 @@ func TestPackageUnitLabels(t *testing.T) {
 			&PackageUnitLabelsParams{
 				Id: 295662811,
 			},
-			`{
-				"content": "string",
-				"name": "string",
-				"type": "string"
-			}`,
+			"%PDF-1.4 test",
 		},
 		// Test No Client-Id or Api-Key
 		{
@@ -2062,21 +2096,18 @@ func TestPackageUnitLabels(t *testing.T) {
 
 		ctx, _ := context.WithTimeout(context.Background(), testTimeout)
 		resp, err := c.FBS().PackageUnitLabel(ctx, test.params)
-		if err != nil {
-			t.Error(err)
-			continue
-		}
 
-		compareJsonResponse(t, test.response, &PackageUnitLabelsResponse{})
-
-		if resp.StatusCode != test.statusCode {
-			t.Errorf("got wrong status code: got: %d, expected: %d", resp.StatusCode, test.statusCode)
-		}
-
-		if resp.StatusCode == http.StatusOK {
-			if resp.Content == "" {
-				t.Errorf("Content cannot be empty")
+		// PackageUnitLabel 返回原始 PDF 字节（[]byte），不再有 StatusCode/Content 包装
+		if test.statusCode == http.StatusOK {
+			if err != nil {
+				t.Errorf("expected PDF, got error: %v", err)
+				continue
 			}
+			if !strings.HasPrefix(string(resp), "%PDF") {
+				t.Errorf("expected PDF bytes, got: %q", string(resp))
+			}
+		} else if err == nil {
+			t.Errorf("expected error for HTTP %d, got nil", test.statusCode)
 		}
 	}
 }
