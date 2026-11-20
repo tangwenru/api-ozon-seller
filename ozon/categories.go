@@ -135,6 +135,9 @@ type GetCategoryAttributesResult struct {
 
 	// Maximum number of values for attribute
 	MaxValueCount int64 `json:"max_value_count"`
+
+	// Indicates whether the complex attribute is a set of values
+	ComplexIsCollection bool `json:"complex_is_collection"`
 }
 
 // Getting characteristics for specified product category and type.
@@ -275,6 +278,117 @@ func (c *Categories) SearchAttributesDictionary(ctx context.Context, params *Sea
 	url := "/v1/description-category/attribute/values/search"
 
 	resp := &SearchAttributeDictionaryResponse{}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
+	if err != nil {
+		return nil, err
+	}
+	response.CopyCommonResponse(&resp.CommonResponse)
+
+	return resp, nil
+}
+
+// 依赖特征（Beta，2026-09-24 加入）：
+// 某些特征只有先选了父特征的值才有意义，例如 品牌 → 车型。
+// 1）DependentAttributes 返回「父特征 → 子特征」的 id 对；
+// 2）DependentAttributeValues 返回某个父子特征对的「父值 → 允许的子值」映射。
+
+type GetDependentAttributesParams struct {
+	// Category identifier
+	DescriptionCategoryId int64 `json:"description_category_id"`
+
+	// Product type identifier
+	TypeId int64 `json:"type_id,omitempty"`
+}
+
+type GetDependentAttributesResponse struct {
+	ozonCore.CommonResponse
+
+	// Parent attribute → child attribute pairs
+	Result []GetDependentAttributesResult `json:"result"`
+}
+
+type GetDependentAttributesResult struct {
+	// Child attribute identifier
+	ChildAttributeId int64 `json:"child_attribute_id"`
+
+	// Parent attribute identifier
+	// parent_attribute_id = 8229 means the parent value is the product type id (type_id)
+	ParentAttributeId int64 `json:"parent_attribute_id"`
+}
+
+// Returns pairs of parent and child attributes. Use DependentAttributeValues
+// to get the child values allowed for each parent value.
+func (c *Categories) DependentAttributes(ctx context.Context, params *GetDependentAttributesParams) (*GetDependentAttributesResponse, error) {
+	url := "/v1/description-category/dependent-attributes"
+
+	resp := &GetDependentAttributesResponse{}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
+	if err != nil {
+		return nil, err
+	}
+	response.CopyCommonResponse(&resp.CommonResponse)
+
+	return resp, nil
+}
+
+type GetDependentAttributeValuesParams struct {
+	// Child attribute identifier
+	ChildAttributeId int64 `json:"child_attribute_id"`
+
+	// Cursor for the next page; empty string starts from the beginning
+	Cursor string `json:"cursor,omitempty"`
+
+	// Category identifier
+	DescriptionCategoryId int64 `json:"description_category_id,omitempty"`
+
+	// Number of child values in the response, 1..1000 (default 100).
+	// OZON counts children, not parent rows; a single parent can span pages.
+	Limit int64 `json:"limit,omitempty"`
+
+	// Parent attribute identifier
+	ParentAttributeId int64 `json:"parent_attribute_id"`
+
+	// Product type identifier
+	TypeId int64 `json:"type_id,omitempty"`
+}
+
+type GetDependentAttributeValuesResponse struct {
+	ozonCore.CommonResponse
+
+	// Cursor for the next page; empty when there are no more values
+	Cursor string `json:"cursor"`
+
+	// Parent value → allowed child values
+	Result []GetDependentAttributeValuesResult `json:"result"`
+}
+
+type GetDependentAttributeValuesResult struct {
+	// Allowed child values for this parent value
+	Children []GetDependentAttributeValueChild `json:"children"`
+
+	// Parent attribute value
+	ParentValue string `json:"parent_value"`
+
+	// Parent attribute value identifier
+	ParentValueId int64 `json:"parent_value_id"`
+}
+
+type GetDependentAttributeValueChild struct {
+	// Child attribute value identifier
+	ChildValueId int64 `json:"child_value_id"`
+
+	// Child attribute value
+	ChildValue string `json:"child_value"`
+}
+
+// Returns child values allowed for each parent value of a dependent attribute pair.
+// Page through the result with Cursor until it is empty.
+func (c *Categories) DependentAttributeValues(ctx context.Context, params *GetDependentAttributeValuesParams) (*GetDependentAttributeValuesResponse, error) {
+	url := "/v1/description-category/dependent-attributes/values"
+
+	resp := &GetDependentAttributeValuesResponse{}
 
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
 	if err != nil {

@@ -144,6 +144,9 @@ type ReturnCommission struct {
 	// Payouts on partner loyalty mechanics: stars
 	Stars float64 `json:"stars"`
 
+	// Payouts on partner loyalty mechanics: pick-up point coinvestment
+	PickUpPointCoinvestment float64 `json:"pick_up_point_coinvestment"`
+
 	// Total accrual
 	Total float64 `json:"total"`
 }
@@ -155,6 +158,96 @@ func (c Finance) ReportOnSoldProducts(ctx context.Context, params *ReportOnSoldP
 	url := "/v2/finance/realization"
 
 	resp := &ReportOnSoldProductsResponse{}
+
+	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
+	if err != nil {
+		return nil, err
+	}
+	response.CopyCommonResponse(&resp.CommonResponse)
+
+	return resp, nil
+}
+
+// RealizationPostingParams 按订单的销售月报请求参数。
+type RealizationPostingParams struct {
+	// Month 报告月份（1-12）
+	Month int32 `json:"month"`
+
+	// Year 报告年份
+	Year int32 `json:"year"`
+}
+
+// RealizationPostingResponse 按订单的销售月报响应。
+// 金额币种由 header.currency_sys_name 给出（中国卖家为 CNY）。
+type RealizationPostingResponse struct {
+	ozonCore.CommonResponse
+
+	Header RealizationPostingHeader `json:"header"`
+	Rows   []RealizationPostingRow  `json:"rows"`
+}
+
+type RealizationPostingHeader struct {
+	DocDate         string `json:"doc_date"`
+	ContractDate    string `json:"contract_date"`
+	ContractNumber  string `json:"contract_number"`
+	CurrencySysName string `json:"currency_sys_name"`
+	Number          string `json:"number"`
+	PayerINN        string `json:"payer_inn"`
+	PayerKPP        string `json:"payer_kpp"`
+	PayerName       string `json:"payer_name"`
+	ReceiverINN     string `json:"receiver_inn"`
+	ReceiverKPP     string `json:"receiver_kpp"`
+	ReceiverName    string `json:"receiver_name"`
+	StartDate       string `json:"start_date"`
+	StopDate        string `json:"stop_date"`
+}
+
+// RealizationPostingRow 月报中一行「商品 × 货件」明细。
+type RealizationPostingRow struct {
+	RowNumber              int32                   `json:"row_number"`
+	Item                   ReturnOnSoldProduct     `json:"item"`
+	CommissionRatio        float64                 `json:"commission_ratio"`
+	SellerPricePerInstance float64                 `json:"seller_price_per_instance"`
+	DeliveryCommission     RealizationCommission   `json:"delivery_commission"`
+	ReturnCommission       RealizationCommission   `json:"return_commission"`
+	Order                  RealizationPostingOrder `json:"order"`
+	LegalEntityDocument    RealizationLegalDoc     `json:"legal_entity_document"`
+}
+
+type RealizationPostingOrder struct {
+	PostingNumber string `json:"posting_number"`
+	CreatedDate   string `json:"created_date"`
+}
+
+type RealizationLegalDoc struct {
+	Number   string `json:"number"`
+	SaleDate string `json:"sale_date"`
+}
+
+// RealizationCommission 签收 / 退货两侧的金额明细。
+type RealizationCommission struct {
+	Amount                  float64 `json:"amount"`
+	Bonus                   float64 `json:"bonus"`
+	Commission              float64 `json:"commission"`
+	Compensation            float64 `json:"compensation"`
+	PricePerInstance        float64 `json:"price_per_instance"`
+	Quantity                int32   `json:"quantity"`
+	StandardFee             float64 `json:"standard_fee"`
+	BankCoinvestment        float64 `json:"bank_coinvestment"`
+	Stars                   float64 `json:"stars"`
+	PickUpPointCoinvestment float64 `json:"pick_up_point_coinvestment"`
+	Total                   float64 `json:"total"`
+}
+
+// GetRealizationPosting 按订单的销售月报（/v1/finance/realization/posting）。
+//
+// 返回当月「已签收」与「退货」逐货件明细，含销售净额、折扣积分、伙伴净款、
+// 佣金与扣佣后净额。报告在次月 5 日后生成；当月/未来月份通常返回 404 或空行。
+// 调用方必须核对 header.currency_sys_name 与报告期间，不能把空报告当 0。
+func (c Finance) GetRealizationPosting(ctx context.Context, params *RealizationPostingParams) (*RealizationPostingResponse, error) {
+	url := "/v1/finance/realization/posting"
+
+	resp := &RealizationPostingResponse{}
 
 	response, err := c.client.Request(ctx, http.MethodPost, url, params, resp, nil)
 	if err != nil {

@@ -410,3 +410,113 @@ func TestSalesToLegalEntities(t *testing.T) {
 		}
 	}
 }
+
+func TestGetRealizationPosting(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		statusCode   int
+		headers      map[string]string
+		params       *RealizationPostingParams
+		response     string
+		errorMessage string
+	}{
+		// Test Ok：人民币销售月报，逐货件明细。
+		{
+			http.StatusOK,
+			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
+			&RealizationPostingParams{
+				Month: 10,
+				Year:  2026,
+			},
+			`{
+				"header": {
+					"doc_date": "2026-11-05",
+					"contract_date": "2025-01-01",
+					"contract_number": "39-808132/26",
+					"currency_sys_name": "CNY",
+					"number": "2026-10",
+					"payer_inn": "7704217370",
+					"payer_kpp": "997750001",
+					"payer_name": "OOO Ozon",
+					"receiver_inn": "91110000MA01",
+					"receiver_kpp": "",
+					"receiver_name": "Seller Ltd",
+					"start_date": "2026-10-01",
+					"stop_date": "2026-10-31"
+				},
+				"rows": [
+					{
+						"row_number": 1,
+						"commission_ratio": 18,
+						"seller_price_per_instance": 100,
+						"item": {"barcode": "123", "name": "商品", "offer_id": "SKU-1", "sku": 111},
+						"order": {"posting_number": "12345-0001-1", "created_date": "2026-10-02"},
+						"delivery_commission": {
+							"amount": 100,
+							"bonus": 0,
+							"commission": 0,
+							"compensation": 0,
+							"price_per_instance": 100,
+							"quantity": 1,
+							"standard_fee": 18,
+							"bank_coinvestment": 2,
+							"stars": 0,
+							"pick_up_point_coinvestment": 1,
+							"total": 85
+						},
+						"return_commission": {
+							"amount": 0,
+							"bonus": 0,
+							"commission": 0,
+							"compensation": 0,
+							"price_per_instance": 0,
+							"quantity": 0,
+							"standard_fee": 0,
+							"bank_coinvestment": 0,
+							"stars": 0,
+							"pick_up_point_coinvestment": 0,
+							"total": 0
+						},
+						"legal_entity_document": {"number": "", "sale_date": ""}
+					}
+				]
+			}`,
+			"",
+		},
+		// Test No report：当月报告尚未生成，Ozon 返回 404。
+		{
+			http.StatusNotFound,
+			map[string]string{"Client-Id": "my-client-id", "Api-Key": "my-api-key"},
+			&RealizationPostingParams{Month: 11, Year: 2026},
+			`{
+				"code": 5,
+				"message": "Report not found"
+			}`,
+			"Report not found",
+		},
+	}
+
+	for _, test := range tests {
+		c := NewMockClient(ozonCore.NewMockHttpHandler(test.statusCode, test.response, test.headers))
+
+		ctx, _ := context.WithTimeout(context.Background(), testTimeout)
+		resp, err := c.Finance().GetRealizationPosting(ctx, test.params)
+		if err != nil {
+			t.Error(err)
+			continue
+		}
+
+		compareJsonResponse(t, test.response, &RealizationPostingResponse{})
+
+		if resp.StatusCode != test.statusCode {
+			t.Errorf("got wrong status code: got: %d, expected: %d", resp.StatusCode, test.statusCode)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			if resp.Message != test.errorMessage {
+				t.Errorf("got wrong error message: got: %s, expected: %s", resp.Message, test.errorMessage)
+			}
+		}
+	}
+}
